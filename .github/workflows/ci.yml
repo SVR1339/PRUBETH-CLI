@@ -1,0 +1,77 @@
+name: PRUBETH CLI Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test & Invariant Verification (${{ matrix.os }} - Py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install rich pytest pyinstaller
+
+      - name: Execute 14-Methodology Test Suite
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Verify CLI Command Acceptance & Diagnostics
+        run: |
+          prubeth --version
+          prubeth --help
+          prubeth doctor
+          prubeth settings
+          prubeth swarm roles
+          prubeth consensus
+          prubeth mcp list
+          prubeth completion bash
+          prubeth completion powershell
+
+  build-binary:
+    name: Build Standalone Windows Executable
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Build Requirements
+        run: |
+          pip install pyinstaller rich
+          pip install -e .
+
+      - name: Compile Standalone prubeth.exe
+        run: |
+          python scripts/build_binary.py
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prubeth-windows-x64
+          path: dist/prubeth.exe

@@ -1,0 +1,41 @@
+# Secrets & Credentials
+.env
+*.env
+*.pem
+*.key
+
+# PRUBETH Local Workspaces & State
+.prubeth/
+*.db
+*.sqlite3
+
+# Python Caches & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Build & Packaging
+build/
+dist/
+*.spec
+
+# OS Specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini

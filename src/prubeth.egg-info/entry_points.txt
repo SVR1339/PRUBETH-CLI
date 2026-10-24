@@ -1,0 +1,2 @@
+[console_scripts]
+prubeth = prubeth.cli.main:main

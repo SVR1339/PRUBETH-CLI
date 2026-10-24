@@ -1,0 +1,64 @@
+name: PRUBETH Official Release & Distribution Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  qualify-and-build:
+    name: Build & Cryptographic Release (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Build & Packaging Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel rich pytest
+
+      - name: Install PRUBETH in Editable Mode
+        run: |
+          pip install -e .
+
+      - name: Run Tier-1 Doctor Diagnostics
+        run: |
+          prubeth doctor
+
+      - name: Run Exhaustive Test Suite
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Build Source Distribution & Wheel
+        run: |
+          python -m build
+
+      - name: Generate Cryptographic SHA-256 Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create Official GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

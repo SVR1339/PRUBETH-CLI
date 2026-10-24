@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prubeth"
+version = "1.0.0"
+description = "PRUBETH Autonomous Developer CLI — Elite Multi-Model Engineering Runtime (AI-DLC, ADLC, AGENTIC SDLC, SE 3.0)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "PRUBETH Engineering Team", email = "engineering@prubeth.ai"}
+]
+keywords = [
+    "autonomous-agent",
+    "developer-tools",
+    "cli",
+    "code-generator",
+    "ai-dlc",
+    "llmops",
+    "devsecops",
+    "multi-agent",
+    "gemini",
+    "openrouter",
+    "ollama"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Quality Assurance",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12"
+]
+dependencies = [
+    "rich>=13.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/prubeth-autonomous-cli/prubeth"
+Documentation = "https://github.com/prubeth-autonomous-cli/prubeth#readme"
+Repository = "https://github.com/prubeth-autonomous-cli/prubeth.git"
+Issues = "https://github.com/prubeth-autonomous-cli/prubeth/issues"
+
+[project.scripts]
+prubeth = "prubeth.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
