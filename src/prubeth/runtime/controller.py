@@ -116,6 +116,33 @@ class AutonomousRuntimeController:
             except Exception:
                 pass
 
+    def chat(self, message: str, model_override: Optional[str] = None) -> GenerationResponse:
+        """Executes a conversational, natural AI developer interaction with repository context."""
+        active_model = model_override or self.config.model_name
+        repo_skeleton = self.repo_intel.build_context_skeleton()
+
+        system_prompt = (
+            "You are PRUBETH, a friendly, sharp, and natural AI software engineering companion.\n"
+            "You are pair-programming with the developer in their workspace.\n"
+            "Respond naturally, conversationally, directly, and concisely in clean GitHub-flavored Markdown.\n"
+            "Do NOT output robotic internal state transitions, and do NOT split simple replies into Plan A / Plan B boxes.\n"
+            "Use the provided workspace structure to give context-aware, insightful, and practical answers.\n"
+            "If the developer greets you or asks how you can help, give a warm, sharp greeting, briefly note their current project context, and invite them to specify what feature, bug fix, or code task they want to tackle."
+        )
+
+        user_prompt = (
+            f"Repository Overview:\n{repo_skeleton}\n\n"
+            f"Developer Message: {message}"
+        )
+
+        return self.gateway.generate(
+            user_prompt,
+            system_instruction=system_prompt,
+            model_name=active_model,
+            model_tier="fast",
+            prefer_local=self.config.prefer_local_model
+        )
+
     def _run_tool_turn_loop(
         self,
         fsm: TaskStateMachine,
@@ -217,13 +244,14 @@ class AutonomousRuntimeController:
             plan_resp = self.gateway.generate(planning_prompt, model_name=active_model, model_tier="reasoning", prefer_local=self.config.prefer_local_model)
             full_plan_text = plan_resp.text
 
-            # Parse Plan A and Plan B
+            # Parse Plan A and Plan B robustly (supporting raw or markdown bold delimiters)
             plan_a = full_plan_text
             plan_b = ""
-            if "=== PLAN B" in full_plan_text:
-                parts = full_plan_text.split("=== PLAN B")
-                plan_a = parts[0].replace("=== PLAN A (Primary Architecture) ===", "").strip()
-                plan_b = parts[1].replace("(Contingency Fallback Architecture) ===", "").strip()
+            if re.search(r"===\s*PLAN\s+B", full_plan_text, flags=re.IGNORECASE):
+                parts = re.split(r"(?:•\s*)?\*{0,2}\s*===\s*PLAN\s+B.*?===\s*\*{0,2}:?", full_plan_text, maxsplit=1, flags=re.IGNORECASE)
+                plan_a = re.sub(r"(?:•\s*)?\*{0,2}\s*===\s*PLAN\s+A.*?===\s*\*{0,2}:?", "", parts[0], flags=re.IGNORECASE).strip()
+                if len(parts) > 1:
+                    plan_b = parts[1].strip()
 
             self._emit("plan_generated", {
                 "content": plan_a,

@@ -96,8 +96,17 @@ def make_event_logger(output_format: str):
         # Default: Rich Terminal Text Rendering
         if event_name == "state_change":
             state_val = payload.value if hasattr(payload, "value") else str(payload)
-            color = "green" if state_val == "COMPLETED" else ("red" if state_val == "FAILED" else "cyan")
-            console.print(f"  [bold {color}]-> State Transition:[/bold {color}] {state_val}")
+            state_map = {
+                "CONTEXTUALIZING": "  [dim cyan]🔍 Inspecting workspace architecture...[/dim cyan]",
+                "PLANNING": "  [dim cyan]🧠 Formulating implementation plan...[/dim cyan]",
+                "READY": "  [dim green]📦 Checkpoint secured. Ready to execute.[/dim green]",
+                "EXECUTING": "  [bold cyan]⚡ Executing code modifications and tools...[/bold cyan]",
+                "VERIFYING": "  [bold cyan]🧪 Running independent verification and tests...[/bold cyan]",
+                "COMPLETED": "  [bold green]✅ Task successfully completed and verified.[/bold green]",
+                "FAILED": "  [bold red]❌ Task verification did not pass.[/bold red]",
+            }
+            if state_val in state_map:
+                console.print(state_map[state_val])
         elif event_name == "plan_generated":
             if isinstance(payload, dict):
                 plan_a = payload.get("content", "")
@@ -132,6 +141,46 @@ def make_event_logger(output_format: str):
             console.print(Panel(payload.summary(), title="Verification Gate", border_style=status_color))
 
     return logger
+
+def is_engineering_task(text: str) -> bool:
+    """Classifies whether the user prompt requires autonomous task execution or conversational chat."""
+    lower = text.strip().lower()
+    if not lower:
+        return False
+
+    # Explicit task execution directives
+    if lower.startswith(("/auto", "task:", "build:", "fix:", "implement:", "do:")):
+        return True
+
+    # Conversational greetings and short inquiries
+    greetings = {"hi", "hello", "hey", "sup", "yo", "good morning", "good evening", "good afternoon", "greetings", "ping"}
+    if lower in greetings or lower.startswith(("hi ", "hello ", "hey ")):
+        return False
+
+    # Question / explanatory inquiries
+    question_starters = (
+        "what", "why", "how", "where", "who", "when", "can you", "could you",
+        "explain", "describe", "tell me", "is there", "are there", "does", "which",
+        "help", "show me", "walk me through", "list"
+    )
+    if any(lower.startswith(q) for q in question_starters):
+        return False
+
+    # Action verbs indicating code modification or project tasks
+    action_verbs = {
+        "create", "add", "implement", "fix", "refactor", "build", "update", "delete",
+        "remove", "write", "generate", "modify", "patch", "install", "test", "run",
+        "deploy", "migrate", "setup", "configure", "make", "draft", "commit", "push"
+    }
+    first_word = lower.split()[0] if lower.split() else ""
+    if first_word in action_verbs:
+        return True
+
+    words = set(lower.split())
+    if words.intersection(action_verbs) and len(lower.split()) >= 3:
+        return True
+
+    return False
 
 def interactive_approval_handler(action_type: str, details: Dict[str, Any]) -> bool:
     """Prompts human developer for approval when required."""
@@ -601,10 +650,19 @@ def main():
                 render_tier1_help(console)
                 continue
 
+            # Conversational Chat vs. Autonomous Engineering Task
+            if not is_engineering_task(prompt_input):
+                res = cfg_mgr.resolve_model_and_provider(current_model)
+                with console.status(f"[dim cyan]Thinking with {res['model']}...[/dim cyan]", spinner="dots"):
+                    chat_resp = controller.chat(prompt_input, model_override=current_model)
+                console.print()
+                console.print(Markdown(chat_resp.text))
+                continue
+
             # Run autonomous goal
             goal = prompt_input[5:].strip() if prompt_input.startswith("/auto") else prompt_input
             res = cfg_mgr.resolve_model_and_provider(current_model)
-            console.print(f"\n[bold cyan]Starting task using {res['model']} ({res['provider']}):[/bold cyan] {goal}\n")
+            console.print(f"\n[bold cyan]Working on task using {res['model']} ({res['provider']}):[/bold cyan] {goal}\n")
             result = controller.run_task(goal, model_override=current_model)
 
             if result.get("success"):
