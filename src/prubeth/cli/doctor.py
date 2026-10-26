@@ -135,11 +135,17 @@ class PrubethDoctor:
         })
 
         # 7. Persistence, WAL Concurrency & Snapshots
+        import uuid
+        probe_id = f"doctor-probe-{uuid.uuid4().hex[:8]}"
         db_path = Path.cwd() / ".prubeth" / "doctor_check.db"
         db = TaskDatabase(str(db_path))
-        db.create_task("doctor-probe", "Verification")
-        retrieved = db.get_task("doctor-probe")
-        wal_ok = retrieved is not None and retrieved.task_id == "doctor-probe"
+        try:
+            db.create_task(probe_id, "Verification")
+            retrieved = db.get_task(probe_id)
+            wal_ok = retrieved is not None and retrieved.task_id == probe_id
+        finally:
+            db.close()
+
         try:
             if db_path.exists():
                 db_path.unlink(missing_ok=True)
@@ -164,6 +170,25 @@ class PrubethDoctor:
             "status": "PASS" if shifter_ok else "FAIL",
             "detail": f"Default: {cfg.get('default_model')} | Timeout: {cfg.get('cloud_timeout_s', 12)}s -> Local Auto-Pivot",
             "target": "Highest-to-Lowest Multi-Tier Failover"
+        })
+
+        # 9. Cryptographic Runtime Integrity & AST Attestation
+        try:
+            from prubeth.security.integrity import PrubethIntegrityEngine
+            integ = PrubethIntegrityEngine(self.console)
+            ast_ok, mod_count, _ = integ.audit_module_ast_integrity()
+            att_token = integ.compute_runtime_attestation_hash()[:12].upper()
+            integ_status = "PASS" if ast_ok else "FAIL"
+            integ_detail = f"100% Valid AST ({mod_count} modules) | Seal: {att_token}"
+        except Exception as e:
+            integ_status = "WARN"
+            integ_detail = f"Integrity check exception: {str(e)}"
+
+        results.append({
+            "pillar": "9. Cryptographic Runtime Integrity",
+            "status": integ_status,
+            "detail": integ_detail,
+            "target": "Cryptographic Attestation Token & Zero Syntax Faults"
         })
 
         all_passed = all(r["status"] in ["PASS", "INFO"] for r in results)

@@ -13,6 +13,79 @@ from prubeth.config.schema import (
     CAT_DEV_EXP
 )
 
+MODEL_ALIASES: Dict[str, str] = {
+    # Frontier Google Gemini with Context Caching & Hybrid Thinking
+    "2.5": "gemini-2.5-pro",
+    "2.5-pro": "gemini-2.5-pro",
+    "gemini-2.5": "gemini-2.5-pro",
+    "gemini-2.5-pro": "gemini-2.5-pro",
+    "2.5-flash": "gemini-2.5-flash",
+    "gemini-2.5-flash": "gemini-2.5-flash",
+    "2.0": "gemini-2.0-flash",
+    "2.0-flash": "gemini-2.0-flash",
+    "gemini-2.0-flash": "gemini-2.0-flash",
+    "1.5-pro": "gemini-1.5-pro",
+    "gemini-1.5-pro": "gemini-1.5-pro",
+    "1.5-flash": "gemini-1.5-flash",
+    "gemini-1.5-flash": "gemini-1.5-flash",
+    "4.0": "gemini-4.0-preview",
+    "4": "gemini-4.0-preview",
+    "gemini-4": "gemini-4.0-preview",
+    "gemini-4.0": "gemini-4.0-preview",
+    "argon": "gemini-4-argon",
+    "gemini-4-argon": "gemini-4-argon",
+    "3.8": "gemini-2.5-flash",
+    "3.8-flash": "gemini-2.5-flash",
+    "gemini-3.8": "gemini-2.5-flash",
+    "gemini-3.8-flash": "gemini-2.5-flash",
+    "3.1": "gemini-2.5-pro",
+    "3.1-pro": "gemini-2.5-pro",
+    "gemini-3.1": "gemini-2.5-pro",
+    "gemini-3.1-pro": "gemini-2.5-pro",
+    "gemini-3.1-pro-preview": "gemini-2.5-pro",
+    "gemini-3.1-flash-lite": "gemini-2.5-flash",
+    "3.5": "gemini-2.5-flash",
+    "3.5-flash": "gemini-2.5-flash",
+    "gemini-3.5": "gemini-2.5-flash",
+
+    # Frontier Anthropic Claude with Multi-Breakpoint Ephemeral Prompt Caching
+    "claude-3-7-sonnet-20250219": "claude-3-7-sonnet-20250219",
+    "claude-3.7": "claude-3-7-sonnet-20250219",
+    "claude-3-7-sonnet": "claude-3-7-sonnet-20250219",
+    "sonnet": "claude-3-7-sonnet-20250219",
+    "claude": "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
+    "claude-3.5": "claude-3-5-sonnet-20241022",
+    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+    "haiku": "claude-3-5-haiku-20241022",
+    "claude-3-5-haiku": "claude-3-5-haiku-20241022",
+    "opus": "claude-3-opus-20240229",
+
+    # Frontier OpenAI with Deterministic Prefix KV Cache Pinning
+    "o3": "o3-mini",
+    "o3-mini": "o3-mini",
+    "o1": "o1",
+    "o1-preview": "o1-preview",
+    "o1-mini": "o1-mini",
+    "gpt-4.5": "gpt-4.5-preview",
+    "gpt-4.5-preview": "gpt-4.5-preview",
+    "gpt-4o": "gpt-4o",
+    "gpt-4o-mini": "gpt-4o-mini",
+
+    # Frontier DeepSeek with 90% Discount Prefix Caching
+    "r1": "deepseek/deepseek-r1:free",
+    "deepseek-r1": "deepseek-r1",
+    "v3": "deepseek-v3",
+    "deepseek-v3": "deepseek-v3",
+    "deepseek": "deepseek/deepseek-r1:free",
+    "deepseek-chat": "deepseek-chat",
+
+    # Local Offline Air-Gapped Models
+    "local": "qwen2.5-coder:7b",
+    "ollama": "qwen2.5-coder:7b",
+    "lmstudio": "local-model"
+}
+
 PROFILES: Dict[str, Dict[str, Any]] = {
     "builder": {
         "name": "Performance Builder",
@@ -99,7 +172,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "active_profile": "builder",
 
     # 1. Model & Provider Preferences
-    "default_model": "gemini-3.1-pro-preview",
+    "default_model": "gemini-2.5-pro",
     "default_provider": "google",
     "planner_model": None,  # Defaults to default_model if None
     "coder_model": None,    # Defaults to default_model if None
@@ -140,8 +213,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "offline_mode": False,               # Disables cloud requests, forces local LM Studio/Ollama
     "strict_sandbox": True,              # Jails operations strictly within workspace path
     "enable_prompt_caching": True,       # Prefix-stable KV cache optimization
+    "enable_context_caching": True,      # Explicit Gemini context caching
+    "context_cache_ttl_s": 300,          # Context cache session TTL in seconds
+    "anthropic_cache_turns": 2,          # Ephemeral multi-turn cache breakpoint depth
+    "prompt_cache_min_tokens": 1024,     # Minimum token threshold for cache persistence
     "max_execution_turns": 10,           # Max autonomous tool turns before forced verification
-    "auto_approve_actions": True         # Default True under Performance Builder profile
+    "auto_approve_actions": True,        # Default True under Performance Builder profile
+    "thinking_budget": 2048,             # Reasoning / thinking budget for Claude 3.7 & Gemini 2.5
+    "reasoning_effort": "medium"         # low | medium | high for OpenAI o1/o3-mini models
 }
 
 class ConfigManager:
@@ -321,7 +400,8 @@ class ConfigManager:
                 "enable_caching": False
             }
 
-        model = requested_model or os.getenv("PRUBETH_MODEL") or cfg.get("default_model", "gemini-3.1-pro-preview")
+        raw_model = requested_model or os.getenv("PRUBETH_MODEL") or cfg.get("default_model", "gemini-2.5-pro")
+        model = MODEL_ALIASES.get(raw_model.lower().strip(), raw_model)
         
         m_lower = model.lower()
         if "/" in model or ":free" in m_lower:
@@ -373,5 +453,11 @@ class ConfigManager:
             "provider": provider,
             "endpoint": endpoint,
             "api_key": api_key,
-            "enable_caching": cfg.get("enable_prompt_caching", True)
+            "enable_caching": cfg.get("enable_prompt_caching", True),
+            "enable_context_caching": cfg.get("enable_context_caching", True),
+            "context_cache_ttl_s": int(cfg.get("context_cache_ttl_s", 300)),
+            "anthropic_cache_turns": int(cfg.get("anthropic_cache_turns", 2)),
+            "prompt_cache_min_tokens": int(cfg.get("prompt_cache_min_tokens", 1024)),
+            "thinking_budget": int(cfg.get("thinking_budget", 2048)),
+            "reasoning_effort": str(cfg.get("reasoning_effort", "medium"))
         }

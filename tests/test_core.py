@@ -16,8 +16,8 @@ class TestPrubethCore(unittest.TestCase):
     def test_config_manager(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cfg = ConfigManager(config_dir=Path(tmpdir))
-            # Test default get (Highest Flagship Pro Model)
-            self.assertEqual(cfg.get("default_model"), "gemini-3.1-pro-preview")
+            # Test default get (Highest Flagship Pro Model with native Context Caching)
+            self.assertEqual(cfg.get("default_model"), "gemini-2.5-pro")
             
             # Test set and persistence
             cfg.set("default_model", "claude-3-7-sonnet")
@@ -68,13 +68,15 @@ class TestPrubethCore(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db_file = Path(tmpdir) / "test.db"
             db = TaskDatabase(str(db_file))
-            
-            task = db.create_task("t1", "Fix bug in auth")
-            self.assertEqual(task.state, "CREATED")
+            try:
+                task = db.create_task("t1", "Fix bug in auth")
+                self.assertEqual(task.state, "CREATED")
 
-            db.update_task_state("t1", "CREATED", "PLANNING", "Generated plan")
-            updated = db.get_task("t1")
-            self.assertEqual(updated.state, "PLANNING")
+                db.update_task_state("t1", "CREATED", "PLANNING", "Generated plan")
+                updated = db.get_task("t1")
+                self.assertEqual(updated.state, "PLANNING")
+            finally:
+                db.close()
 
     def test_security_jail(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,22 +158,25 @@ class TestPrubethCore(unittest.TestCase):
             ws = Path(tmpdir)
             sec = SecurityEngine(workspace_root=str(ws), auto_approve_all=True)
             db = TaskDatabase(str(ws / "test.db"))
-            engine = ToolExecutionEngine(sec, db, "test_aliases")
+            try:
+                engine = ToolExecutionEngine(sec, db, "test_aliases")
 
-            # Write file using file_path instead of path
-            ok, out = engine.execute_tool("write_file", {"file_path": "alias_test.py", "content": "x = 42\n"})
-            self.assertTrue(ok)
-            self.assertTrue((ws / "alias_test.py").exists())
+                # Write file using file_path instead of path
+                ok, out = engine.execute_tool("write_file", {"file_path": "alias_test.py", "content": "x = 42\n"})
+                self.assertTrue(ok)
+                self.assertTrue((ws / "alias_test.py").exists())
 
-            # Read file using filepath
-            ok, content = engine.execute_tool("read_file", {"filepath": "alias_test.py"})
-            self.assertTrue(ok)
-            self.assertIn("x = 42", content)
+                # Read file using filepath
+                ok, content = engine.execute_tool("read_file", {"filepath": "alias_test.py"})
+                self.assertTrue(ok)
+                self.assertIn("x = 42", content)
 
-            # Grep search using pattern
-            ok, search_out = engine.execute_tool("grep_search", {"pattern": "42", "path": "."})
-            self.assertTrue(ok)
-            self.assertIn("alias_test.py", search_out)
+                # Grep search using pattern
+                ok, search_out = engine.execute_tool("grep_search", {"pattern": "42", "path": "."})
+                self.assertTrue(ok)
+                self.assertIn("alias_test.py", search_out)
+            finally:
+                db.close()
 
 if __name__ == "__main__":
     unittest.main()

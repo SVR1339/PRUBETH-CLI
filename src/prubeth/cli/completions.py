@@ -80,3 +80,73 @@ _prubeth() {
 }
 _prubeth "$@"
 """
+
+def install_shell_completion(shell_name: str = None) -> tuple:
+    """Automatically discovers profile path and safely installs completion script."""
+    import os
+    from pathlib import Path
+
+    if not shell_name:
+        if os.name == "nt":
+            shell_name = "powershell"
+        else:
+            shell_env = os.getenv("SHELL", "").lower()
+            if "zsh" in shell_env:
+                shell_name = "zsh"
+            else:
+                shell_name = "bash"
+
+    shell_name = shell_name.lower()
+
+    if shell_name in ["powershell", "pwsh"]:
+        possible_paths = [
+            Path.home() / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1",
+            Path.home() / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1",
+            Path.home() / "OneDrive" / "Documents" / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1",
+            Path.home() / "OneDrive" / "Documents" / "PowerShell" / "Microsoft.PowerShell_profile.ps1"
+        ]
+        target_file = None
+        for p in possible_paths:
+            if p.parent.exists():
+                target_file = p
+                break
+        if not target_file:
+            target_file = possible_paths[0]
+
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        if not target_file.exists():
+            target_file.write_text("# PowerShell Profile\n", encoding="utf-8")
+
+        existing_text = target_file.read_text(encoding="utf-8", errors="ignore")
+        if "Register-ArgumentCompleter -Native -CommandName prubeth" in existing_text:
+            return True, f"PRUBETH completion already installed in: {target_file}"
+
+        completion_script = generate_powershell_completion()
+        with open(target_file, "a", encoding="utf-8") as f:
+            f.write("\n\n" + completion_script + "\n")
+
+        return True, f"Successfully installed PRUBETH completion to:\n  {target_file}\n\nActivate now with: . '{target_file}'"
+
+    elif shell_name == "bash":
+        target_file = Path.home() / ".bashrc"
+        existing_text = target_file.read_text(encoding="utf-8", errors="ignore") if target_file.exists() else ""
+        if "_prubeth_completions" in existing_text:
+            return True, f"PRUBETH completion already installed in: {target_file}"
+
+        completion_script = generate_bash_completion()
+        with open(target_file, "a", encoding="utf-8") as f:
+            f.write("\n\n" + completion_script + "\n")
+        return True, f"Successfully installed PRUBETH completion to: {target_file}\nActivate with: source ~/.bashrc"
+
+    elif shell_name == "zsh":
+        target_file = Path.home() / ".zshrc"
+        existing_text = target_file.read_text(encoding="utf-8", errors="ignore") if target_file.exists() else ""
+        if "_prubeth" in existing_text:
+            return True, f"PRUBETH completion already installed in: {target_file}"
+
+        completion_script = generate_zsh_completion()
+        with open(target_file, "a", encoding="utf-8") as f:
+            f.write("\n\n" + completion_script + "\n")
+        return True, f"Successfully installed PRUBETH completion to: {target_file}\nActivate with: source ~/.zshrc"
+
+    return False, f"Unsupported shell: {shell_name}"

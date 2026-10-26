@@ -4,8 +4,8 @@ import tarfile
 import hashlib
 from pathlib import Path
 
-def create_source_distribution(project_root: Path, dist_dir: Path, version: str = "1.0.0"):
-    """Creates a standard sdist prubeth-1.0.0.tar.gz archive."""
+def create_source_distribution(project_root: Path, dist_dir: Path, version: str = "1.1.0"):
+    """Creates a standard sdist prubeth-1.1.0.tar.gz archive."""
     dist_dir.mkdir(parents=True, exist_ok=True)
     tar_path = dist_dir / f"prubeth-{version}.tar.gz"
     

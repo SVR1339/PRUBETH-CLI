@@ -47,6 +47,7 @@ jobs:
           prubeth mcp list
           prubeth completion bash
           prubeth completion powershell
+          prubeth setup-completion
 
   build-binary:
     name: Build Standalone Windows Executable

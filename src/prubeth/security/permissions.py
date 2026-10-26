@@ -23,6 +23,9 @@ class SecurityEngine:
             "grep_search": PermissionLevel.ALLOW,
             "git_status": PermissionLevel.ALLOW,
             "git_diff": PermissionLevel.ALLOW,
+            "code_search": PermissionLevel.ALLOW,
+            "resolve_symbol": PermissionLevel.ALLOW,
+            "find_symbol_references": PermissionLevel.ALLOW,
             "write_file": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
             "edit_file": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
             "run_command": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
@@ -57,7 +60,9 @@ class SecurityEngine:
     def validate_path(self, target_path: str) -> Tuple[bool, Path, str]:
         """Enforces that all file interactions remain strictly within the workspace jail."""
         try:
-            p = Path(target_path)
+            # Expand ~ to catch home-directory traversal attempts
+            expanded_str = os.path.expanduser(str(target_path))
+            p = Path(expanded_str)
             resolved = p.resolve() if p.is_absolute() else (self.workspace_root / p).resolve()
             try:
                 resolved.relative_to(self.workspace_root)

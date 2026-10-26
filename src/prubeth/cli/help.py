@@ -3,11 +3,13 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+from prubeth.cli.version import PRUBETH_VERSION
+
 def render_tier1_help(console: Console):
     """Renders Google/Anthropic-standard comprehensive CLI documentation."""
     console.print(Panel(
-        "[bold cyan]PRUBETH Autonomous Developer CLI[/bold cyan] — [bold white]v1.0.0[/bold white]\n"
-        "[dim]Elite Multi-Model Autonomous Software Engineering Runtime (Apache-2.0)[/dim]",
+        f"[bold cyan]PRUBETH Autonomous Developer CLI[/bold cyan] — [bold white]v{PRUBETH_VERSION}[/bold white] [bold green](FRONTIER PARITY Edition)[/bold green]\n"
+        "[dim]Silicon Valley Production Autonomous Engineering Engine & Pair-Programming Runtime (Apache-2.0)[/dim]",
         border_style="cyan"
     ))
 
@@ -54,9 +56,32 @@ def render_tier1_help(console: Console):
     cmds_table.add_row("", "consensus", "Enforce multi-agent AST & red-team safety consensus invariants.")
 
     # Intelligence & Memory
-    cmds_table.add_row("Memory & Safety", "memory [anti-patterns]", "Inspect continuous intelligence, learned anti-patterns, and design decisions.")
+    cmds_table.add_row("Code Intelligence", "search <query>", "Pure-Python BM25 semantic codebase search and AST symbol indexer.")
+    cmds_table.add_row("", "symbols", "List all workspace class and function definitions with signatures.")
+    cmds_table.add_row("", "callers <symbol>", "DeepMind Monorepo AST reference tracker: find all callers and usages.")
+    cmds_table.add_row("", "heal \"<command>\"", "Autonomous Auto-TDD self-healing loop: intercepts errors, applies patch, auto-rolls back on failure.")
+    cmds_table.add_row("", "cost / spend", "Real-time token expenditure, latency percentiles, and LLMOps radar.")
+    cmds_table.add_row("", "cache / kvcache", "Multi-Tier Prompt KV & Context Cache Radar HUD (TTL, dollar savings).")
+    cmds_table.add_row("", "compact", "Claude Code parity: compress multi-turn history into pinned prefix scratchpad.")
+    cmds_table.add_row("", "timeline / snaps", "Zero-git snapshot rollback with visual time-travel DAG.")
+    cmds_table.add_row("", "history / tree", "Display visual conversation decision tree, branches, and checkpoint nodes.")
+    cmds_table.add_row("", "memory [anti-patterns]", "Inspect continuous intelligence, learned anti-patterns, and design decisions.")
+    cmds_table.add_row("", "learn <directive>", "Persist user directives & architectural invariants permanently into Memory Vault.")
     cmds_table.add_row("", "rollback", "Instantly revert workspace to the latest clean snapshot checkpoint.")
     cmds_table.add_row("", "diff", "View pure-Python working tree code modifications and deltas.")
+
+    # Autonomous Engineering & Git
+    cmds_table.add_row("Autonomous Workflows", "goal <objective>", "Anthropic Claude Code target: long-horizon milestone decomposition & execution loop.")
+    cmds_table.add_row("", "commit [-y]", "Synthesize conventional semantic commit message from uncommitted working tree diff.")
+    cmds_table.add_row("", "pr", "Synthesize GitHub Pull Request description with test evidence into .prubeth/PULL_REQUEST.md.")
+    cmds_table.add_row("", "issue <ticket>", "Autonomous zero-babysitting GitHub issue resolver with auto-TDD verification.")
+    cmds_table.add_row("", "migrate <objective>", "Monorepo-scale migration runner with topological file order & interface protection.")
+
+    # Frontier Superintelligence & Research
+    cmds_table.add_row("Frontier AI & Monorepo", "autotune <kernel>", "OpenAI target: autonomous Triton/CUDA GPU kernel synthesis & autotuning.")
+    cmds_table.add_row("", "research <hypothesis>", "OpenAI/DeepMind target: closed-loop AI research & empirical ablation studies.")
+    cmds_table.add_row("", "janitor [scan|fix]", "DeepMind monorepo target: SRE security vulnerability audit & automated healing.")
+    cmds_table.add_row("", "bio [inspect|manifest]", "Computational biology bridge: parse PDB/mmCIF & AlphaFold pLDDT metrics.")
 
     # Protocols & Shell
     cmds_table.add_row("Protocols & Shell", "mcp [list|tools|add]", "Manage Model Context Protocol (MCP) tool servers and JSON-RPC dispatch.")

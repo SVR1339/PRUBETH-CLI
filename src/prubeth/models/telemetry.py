@@ -18,6 +18,7 @@ class ModelCallMetrics:
     output_tokens: int
     cached_tokens: int
     success: bool
+    cache_creation_tokens: int = 0
     error_message: Optional[str] = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -42,6 +43,7 @@ class LLMOpsMonitor:
         output_tokens: int = 0,
         cached_tokens: int = 0,
         success: bool = True,
+        cache_creation_tokens: int = 0,
         error_message: Optional[str] = None
     ):
         """Records an inference event for LLMOps observability."""
@@ -53,6 +55,7 @@ class LLMOpsMonitor:
             output_tokens=output_tokens,
             cached_tokens=cached_tokens,
             success=success,
+            cache_creation_tokens=cache_creation_tokens,
             error_message=error_message
         )
         self.metrics.append(metric)

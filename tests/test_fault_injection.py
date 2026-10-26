@@ -20,6 +20,11 @@ class TestFaultInjection(unittest.TestCase):
         self.engine = ToolExecutionEngine(self.sec, self.db, "fault-task-1")
 
     def tearDown(self):
+        if hasattr(self, "db") and self.db:
+            try:
+                self.db.close()
+            except Exception:
+                pass
         self.temp_dir.cleanup()
 
     def test_fault_injection_unknown_tool_hallucination(self):
@@ -125,10 +130,11 @@ class TestFaultInjection(unittest.TestCase):
     def test_detect_local_model_offline_resilience(self):
         """Fast-probe should return None and not raise when local engine is offline."""
         from prubeth.models.gateway import UniversalModelGateway
+        from unittest.mock import patch
         gateway = UniversalModelGateway()
-        res = gateway.detect_local_model()
-        # On this environment neither LM Studio nor Ollama is serving on port 1234/11434
-        self.assertIsNone(res)
+        with patch("socket.socket.connect", side_effect=OSError("Engine offline")):
+            res = gateway.detect_local_model()
+            self.assertIsNone(res)
 
     def test_fault_injection_auth_error_autoswitch_to_local_model(self):
         """Fault Injection: Invalid API Key / 401 Unauthorized triggers instant auto-switch to local model."""

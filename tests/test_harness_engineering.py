@@ -18,6 +18,11 @@ class TestHarnessEngineering(unittest.TestCase):
         self.engine = ToolExecutionEngine(self.sec, self.db, "harness-task-1")
 
     def tearDown(self):
+        if hasattr(self, "db") and self.db:
+            try:
+                self.db.close()
+            except Exception:
+                pass
         self.temp_dir.cleanup()
 
     def test_harness_parameter_normalization(self):

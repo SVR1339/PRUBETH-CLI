@@ -1,3 +1,4 @@
+import sys
 import os
 import uuid
 import json
@@ -77,6 +78,32 @@ def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
                         break
     return None
 
+def extract_tool_call(text: str) -> Optional[Dict[str, Any]]:
+    """Extracts tool call JSON from Markdown blocks or raw text."""
+    m = re.search(r"```(?:tool|json)?\s*(\{[\s\S]*?\})\s*```", text)
+    if m:
+        try:
+            parsed = json.loads(m.group(1))
+            if isinstance(parsed, dict) and ("tool" in parsed or "action" in parsed):
+                return {
+                    "tool": parsed.get("tool") or parsed.get("action"),
+                    "args": parsed.get("args") or parsed.get("parameters") or {}
+                }
+        except Exception:
+            pass
+
+    start = text.find('{"tool"')
+    if start == -1:
+        start = text.find('{"action"')
+    if start != -1:
+        extracted = extract_json_object(text[start:])
+        if extracted and ("tool" in extracted or "action" in extracted):
+            return {
+                "tool": extracted.get("tool") or extracted.get("action"),
+                "args": extracted.get("args") or extracted.get("parameters") or {}
+            }
+    return None
+
 class AutonomousRuntimeController:
     """Subsystem 2: Elite Autonomous Runtime Controller with Plan B & Auto-Rollback."""
 
@@ -106,6 +133,11 @@ class AutonomousRuntimeController:
         self.subagent_mgr = self.subagents
         self.ide_bridge = IDEBridgeServer()
         self.mcp = MCPManager(self.workspace_root)
+        # Multi-turn conversational fluid history & compaction state (Claude Code Parity)
+        self.fluid_history: List[Dict[str, Any]] = []
+        # Frontier Prompt & Context Cache Lifecycle Manager (Gemini cachedContents & Claude Ephemeral)
+        from prubeth.models.caching import ContextCacheManager
+        self.cache_mgr = ContextCacheManager(workspace_root=self.workspace_root, config_manager=self.gateway.cfg_mgr, gateway=self.gateway)
 
     def _emit(self, event_name: str, payload: Any):
         if self.event_cb:
@@ -116,18 +148,46 @@ class AutonomousRuntimeController:
             except Exception:
                 pass
 
-    def chat(self, message: str, model_override: Optional[str] = None) -> GenerationResponse:
-        """Executes a conversational, natural AI developer interaction with repository context."""
+    def close(self):
+        """Releases all open resources and databases."""
+        if hasattr(self, "tool_engine") and self.tool_engine:
+            try:
+                self.tool_engine.close()
+            except Exception:
+                pass
+        if hasattr(self, "db") and self.db:
+            try:
+                self.db.close()
+            except Exception:
+                pass
+        if hasattr(self, "ide_bridge") and self.ide_bridge:
+            try:
+                self.ide_bridge.stop()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def __del__(self):
+        self.close()
+
+    def chat(self, message: str, model_override: Optional[str] = None, stream_cb: Optional[Any] = None) -> GenerationResponse:
+        """Executes a conversational, natural AI developer interaction with repository context and streaming."""
         active_model = model_override or self.config.model_name
         repo_skeleton = self.repo_intel.build_context_skeleton()
 
         system_prompt = (
-            "You are PRUBETH, a friendly, sharp, and natural AI software engineering companion.\n"
-            "You are pair-programming with the developer in their workspace.\n"
-            "Respond naturally, conversationally, directly, and concisely in clean GitHub-flavored Markdown.\n"
+            "You are PRUBETH, an elite principal software engineer and autonomous programming agent.\n"
+            "Communicate with utmost technical clarity, precision, and conciseness using formal British English orthography (e.g., analyse, optimise, behaviour, synchronise, prioritised).\n"
+            "Maintain an authoritative, direct, and rigorous tone. Omit all conversational preamble, pleasantries, apologies, and filler phrases.\n"
+            "Respond directly and concisely in clean GitHub-flavoured Markdown.\n"
             "Do NOT output robotic internal state transitions, and do NOT split simple replies into Plan A / Plan B boxes.\n"
-            "Use the provided workspace structure to give context-aware, insightful, and practical answers.\n"
-            "If the developer greets you or asks how you can help, give a warm, sharp greeting, briefly note their current project context, and invite them to specify what feature, bug fix, or code task they want to tackle."
+            "Use the provided workspace structure to give context-aware, insightful, and practical solutions.\n"
+            "Every explanation must be mathematically sound, syntactically verified, and directly actionable."
         )
 
         user_prompt = (
@@ -140,8 +200,237 @@ class AutonomousRuntimeController:
             system_instruction=system_prompt,
             model_name=active_model,
             model_tier="fast",
-            prefer_local=self.config.prefer_local_model
+            prefer_local=self.config.prefer_local_model,
+            stream_cb=stream_cb
         )
+
+    def run_fluid_turn(
+        self,
+        user_message: str,
+        model_override: Optional[str] = None,
+        stream_cb: Optional[Callable[[str], None]] = None,
+        tool_cb: Optional[Callable[[str, Dict[str, Any], bool, str], None]] = None,
+        max_tool_turns: int = 6
+    ) -> Dict[str, Any]:
+        """Unified Fluid ReAct Execution Engine (Claude Code-Grade Experience).
+        
+        Seamlessly streams thought and conversational answers directly to the user.
+        Dynamically executes workspace tools (read_file, edit_file, write_file, run_command,
+        code_search, resolve_symbol) inline without rigid multi-phase pipeline lock-in.
+        """
+        active_model = model_override or self.config.model_name
+        repo_instructions = self.repo_intel.load_project_instructions()
+        memory_ctx = self.memory.get_memory_context()
+
+        # Secure background snapshot for zero-risk rollback
+        snap_mgr = SnapshotManager(workspace_root=self.workspace_root)
+        baseline_snap = snap_mgr.create_snapshot("fluid_turn_baseline")
+
+        if not hasattr(self, "tool_engine") or not self.tool_engine:
+            self.tool_engine = ToolExecutionEngine(self.security, self.db, "fluid_turn", mcp_mgr=self.mcp)
+
+        system_prompt = (
+            "You are PRUBETH, an elite principal software engineer and autonomous programming agent.\n"
+            "Communicate with utmost technical clarity, precision, and conciseness using formal British English orthography (e.g., analyse, optimise, behaviour, synchronise, prioritised).\n"
+            "Maintain an authoritative, direct, and rigorous tone. Omit all conversational preamble, pleasantries, apologies, and filler phrases.\n"
+            "You have direct access to workspace tools (read_file, edit_file, write_file, run_command, grep_search, find_files, code_search, resolve_symbol, git_diff, find_symbol_references).\n"
+            "Invoke tools proactively whenever necessary to inspect the repository, write code, run tests, or verify syntax.\n"
+            "When reasoning or analysing, formulate concise, structured rationale before taking actions.\n"
+            "If no tools are required, provide clean, exact solutions in GitHub-flavoured Markdown.\n"
+            "Do NOT output robotic internal state transitions (CREATED, PLANNING) or unsolicited Plan A / Plan B boxes during fluid dialogue.\n"
+            "Every explanation must be mathematically sound, syntactically verified, and directly actionable."
+        )
+
+        # Gemini CLI & Claude Code Tier-1 Environment Context Priming
+        branch_name = "main"
+        try:
+            head_file = self.workspace_root / ".git" / "HEAD"
+            if head_file.exists():
+                ref = head_file.read_text(encoding="utf-8").strip()
+                if ref.startswith("ref: refs/heads/"):
+                    branch_name = ref.replace("ref: refs/heads/", "")
+        except Exception:
+            pass
+
+        history_context = [
+            f"Environment Context:\n- Workspace Root: {self.workspace_root}\n- Git Branch: {branch_name}\n- Platform: {sys.platform} (Python {sys.version.split()[0]})\n"
+        ]
+        if repo_instructions:
+            history_context.append(f"Project Rules:\n{repo_instructions}\n")
+        if memory_ctx:
+            history_context.append(f"Learned Project Memory:\n{memory_ctx}\n")
+
+        messages = []
+        if self.fluid_history:
+            for past_m in self.fluid_history[-6:]:
+                messages.append({"role": past_m.get("role", "user"), "content": past_m.get("content", "")})
+
+        initial_user_content = "\n\n".join(history_context + [f"Developer: {user_message}"])
+        messages.append({"role": "user", "content": initial_user_content})
+        tools_executed = []
+        final_text = ""
+
+        turn = 0
+        while turn < max_tool_turns:
+            turn += 1
+
+            accumulated_tokens = []
+            def chunk_streamer(token: str):
+                accumulated_tokens.append(token)
+                current_so_far = "".join(accumulated_tokens)
+                if stream_cb and "```tool" not in current_so_far and '{"tool"' not in current_so_far:
+                    stream_cb(token)
+
+            # Automatic Google Gemini Context Caching (cachedContents REST lifecycle)
+            gemini_cache_id = None
+            resolved_m = self.gateway.cfg_mgr.resolve_model_and_provider(active_model)
+            if resolved_m["provider"] == "google" and resolved_m.get("enable_context_caching", True):
+                ws_ctx = "\n\n".join(history_context)
+                gemini_cache_id = self.cache_mgr.get_or_create_gemini_session(
+                    model=resolved_m["model"],
+                    workspace_context=ws_ctx,
+                    system_instruction=system_prompt,
+                    tools=True
+                )
+
+            resp = self.gateway.generate(
+                messages,
+                system_instruction=system_prompt,
+                model_name=active_model,
+                model_tier="fast",
+                prefer_local=self.config.prefer_local_model,
+                stream_cb=chunk_streamer if stream_cb else None,
+                tools=True,
+                cached_content=gemini_cache_id
+            )
+
+            raw_resp = getattr(resp, "text", "") or ""
+            raw_tool_calls = getattr(resp, "tool_calls", None)
+            tool_calls = raw_tool_calls if isinstance(raw_tool_calls, list) else []
+
+            # Robust fallback for text-based tool calls (mocks, offline local models)
+            if not tool_calls and raw_resp:
+                extracted = extract_tool_call(raw_resp)
+                if extracted:
+                    tool_calls = [{"id": f"call_{len(tools_executed)+1}", "name": extracted["tool"], "args": extracted.get("args", {})}]
+
+            if not tool_calls:
+                clean_tail = re.sub(r"```(?:tool|json)?[\s\S]*?```", "", raw_resp).strip()
+                if clean_tail:
+                    final_text = (final_text + "\n\n" + clean_tail).strip()
+                elif raw_resp:
+                    final_text = (final_text + "\n\n" + raw_resp).strip()
+                break
+
+            # Clean leading/trailing commentary text before tool
+            display_text = re.sub(r"```(?:tool|json)?[\s\S]*?```", "", raw_resp).strip()
+            if display_text and not accumulated_tokens:
+                final_text = (final_text + "\n\n" + display_text).strip()
+
+            # Record assistant turn in multi-turn structured message tree
+            messages.append({
+                "role": "assistant",
+                "content": raw_resp,
+                "tool_calls": tool_calls
+            })
+
+            # Execute tool calls
+            for tc in tool_calls:
+                t_id = tc.get("id", f"call_{len(tools_executed)+1}")
+                t_name = tc.get("name", "")
+                t_args = tc.get("args", {})
+
+                if tool_cb:
+                    tool_cb("invoking", {"tool": t_name, "args": t_args}, True, "")
+
+                success, output = self.tool_engine.execute_tool(t_name, t_args, approval_cb=self.approval_cb)
+                tools_executed.append({"tool": t_name, "args": t_args, "success": success, "output": output[:300]})
+
+                if tool_cb:
+                    tool_cb("result", {"tool": t_name, "args": t_args}, success, output)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": t_id,
+                    "name": t_name,
+                    "content": output[:4000]
+                })
+
+        # Record fluid turn into persistent multi-turn session history
+        self.fluid_history.append({"role": "user", "content": user_message})
+        asst_record: Dict[str, Any] = {"role": "assistant", "content": final_text or raw_resp}
+        if tools_executed:
+            asst_record["tools_summary"] = [f"{t['tool']}: {'OK' if t['success'] else 'ERR'}" for t in tools_executed]
+        self.fluid_history.append(asst_record)
+
+        return {
+            "text": final_text or raw_resp,
+            "tools_executed": tools_executed,
+            "success": True,
+            "snapshot_id": baseline_snap,
+            "prompt_tokens": getattr(resp, "prompt_tokens", 0),
+            "candidate_tokens": getattr(resp, "candidate_tokens", 0),
+            "cached_tokens": getattr(resp, "cached_tokens", 0),
+            "thinking_tokens": getattr(resp, "thinking_tokens", 0),
+            "latency_s": getattr(resp, "latency_s", 0.0),
+            "model": getattr(resp, "model", active_model or ""),
+            "provider": getattr(resp, "provider", "")
+        }
+
+    def compact_history(self) -> Dict[str, Any]:
+        """Compresses fluid conversation history to maintain pinned prefix KV cache and prevent bloat.
+        
+        Matches Claude Code /compact standard: prunes raw intermediate tool outputs,
+        summarizes historical turns into an executive architectural scratchpad, and keeps
+        recent context razor-sharp.
+        """
+        orig_turns = len(self.fluid_history)
+        orig_chars = sum(len(str(m.get("content", ""))) for m in self.fluid_history)
+
+        if not self.fluid_history:
+            return {
+                "original_turns": 0,
+                "compacted_turns": 0,
+                "original_chars": 0,
+                "compacted_chars": 0,
+                "tokens_saved_approx": 0,
+                "summary": "No active conversation turns to compact."
+            }
+
+        # Synthesize compaction scratchpad from historical turns
+        summary_lines = ["[PRUBETH Compacted Architectural Context & Historical Scratchpad]"]
+        turn_idx = 1
+        for i in range(0, len(self.fluid_history), 2):
+            u_msg = self.fluid_history[i] if i < len(self.fluid_history) else {}
+            a_msg = self.fluid_history[i+1] if i+1 < len(self.fluid_history) else {}
+            u_text = str(u_msg.get("content", ""))[:200].replace("\n", " ")
+            a_text = str(a_msg.get("content", ""))[:300].replace("\n", " ")
+            tools_str = ""
+            if "tools_summary" in a_msg:
+                tools_str = f" | Tools: {', '.join(a_msg['tools_summary'])}"
+            summary_lines.append(f"- Turn {turn_idx}: Dev: '{u_text}' -> Solution: {a_text}{tools_str}")
+            turn_idx += 1
+
+        compacted_content = "\n".join(summary_lines)
+        self.fluid_history = [
+            {"role": "user", "content": compacted_content},
+            {"role": "assistant", "content": "Acknowledged. Historical context compacted and pinned. Ready for next instructions."}
+        ]
+        new_chars = sum(len(str(m.get("content", ""))) for m in self.fluid_history)
+        tokens_saved = max(0, (orig_chars - new_chars) // 4)
+
+        return {
+            "original_turns": orig_turns,
+            "compacted_turns": len(self.fluid_history),
+            "original_chars": orig_chars,
+            "compacted_chars": new_chars,
+            "tokens_saved_approx": tokens_saved,
+            "summary": compacted_content
+        }
+
+    def clear_history(self):
+        """Resets fluid conversation history while preserving memory invariants and snapshots."""
+        self.fluid_history.clear()
 
     def _run_tool_turn_loop(
         self,

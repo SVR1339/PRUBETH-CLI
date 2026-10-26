@@ -1,7 +1,7 @@
 import os
 import shutil
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 class SnapshotManager:
@@ -16,7 +16,10 @@ class SnapshotManager:
         self.task_id = task_id
         self.snapshots_dir = self.workspace_root / ".prubeth" / "snapshots" / self.task_id
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
-        self.ignored_dirs = {".git", ".prubeth", "__pycache__", "node_modules", ".venv", "venv", ".pytest_cache"}
+        self.ignored_dirs = {
+            ".git", ".prubeth", "__pycache__", "node_modules", ".venv", "venv",
+            ".pytest_cache", "dist", "build", "prubeth.egg-info", ".mypy_cache"
+        }
 
     def create_snapshot(self, label: str) -> str:
         """Captures a shadow copy of all relevant workspace files."""
@@ -86,4 +89,68 @@ class SnapshotManager:
         """Lists available snapshots for this task."""
         if not self.snapshots_dir.exists():
             return []
-        return [d.name for d in self.snapshots_dir.iterdir() if d.is_dir()]
+        return sorted([d.name for d in self.snapshots_dir.iterdir() if d.is_dir()])
+
+    def get_timeline(self) -> List[Dict[str, Any]]:
+        """Returns structured metadata timeline for all checkpoints in chronological order."""
+        import json
+        timeline = []
+        if not self.snapshots_dir.exists():
+            return []
+
+        for d in sorted(self.snapshots_dir.iterdir()):
+            if d.is_dir():
+                manifest_file = d / ".manifest.json"
+                ts = ""
+                files_count = 0
+                if manifest_file.exists():
+                    try:
+                        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                        ts = data.get("timestamp", "")
+                        files_count = len(data.get("files", []))
+                    except Exception:
+                        pass
+                timeline.append({
+                    "label": d.name,
+                    "timestamp": ts or datetime.fromtimestamp(d.stat().st_mtime).isoformat(),
+                    "files_count": files_count,
+                    "path": str(d)
+                })
+        return timeline
+
+    def compute_snapshot_diff(self, label: Optional[str] = None) -> str:
+        """Computes a pure-Python unified diff against a snapshot without needing Git."""
+        import difflib
+        snapshots = self.list_snapshots()
+        if not snapshots:
+            return ""
+        target_label = label or snapshots[-1]
+        snapshot_path = self.snapshots_dir / target_label
+        if not snapshot_path.exists():
+            return ""
+
+        diff_chunks = []
+        for root, dirs, files in os.walk(self.workspace_root):
+            dirs[:] = [d for d in dirs if d not in self.ignored_dirs]
+            for file in files:
+                current_file = Path(root) / file
+                rel = current_file.relative_to(self.workspace_root).as_posix()
+                snap_file = snapshot_path / rel
+
+                cur_text = current_file.read_text(encoding="utf-8", errors="ignore") if current_file.is_file() else ""
+                snap_text = snap_file.read_text(encoding="utf-8", errors="ignore") if snap_file.is_file() else ""
+
+                if cur_text != snap_text:
+                    orig_lines = snap_text.splitlines(keepends=True)
+                    new_lines = cur_text.splitlines(keepends=True)
+                    diff = list(difflib.unified_diff(
+                        orig_lines,
+                        new_lines,
+                        fromfile=f"a/{rel}",
+                        tofile=f"b/{rel}",
+                        lineterm=""
+                    ))
+                    if diff:
+                        diff_chunks.append("\n".join(diff))
+
+        return "\n\n".join(diff_chunks)

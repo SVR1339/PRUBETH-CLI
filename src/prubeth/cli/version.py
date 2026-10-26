@@ -6,10 +6,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-PRUBETH_VERSION = "1.0.0"
-RELEASE_TIER = "Enterprise Commercial Production"
+PRUBETH_VERSION = "1.3.1"
+RELEASE_TIER = "Enterprise Commercial Production (Frontier Prompt & Context Caching Edition)"
 LICENSE = "Apache-2.0"
-BUILD_COMMIT = "release-v1.0.0-final"
+BUILD_COMMIT = "release-v1.3.1-frontier-prompt-context-caching"
 
 def get_version_metadata() -> Dict[str, Any]:
     """Returns structured system and runtime version metadata."""

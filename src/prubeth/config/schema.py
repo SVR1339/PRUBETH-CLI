@@ -40,6 +40,49 @@ SETTING_REGISTRY: Dict[str, SettingDefinition] = {
         impact="Reduces Time-to-First-Token (TTFT) by up to 75% on Gemini and saves up to 90% cache read input costs on Claude/DeepSeek.",
         recommendation="Always ON for remote LLM providers (Gemini, Claude, DeepSeek)."
     ),
+    "enable_context_caching": SettingDefinition(
+        key="enable_context_caching",
+        category=CAT_PERFORMANCE,
+        label="Explicit Context Caching (Gemini cachedContents)",
+        value_type="bool",
+        default=True,
+        description="Persists large codebase prefixes, documents, and tool schemas in GPU memory via Google Gemini cachedContents API.",
+        impact="Cuts input token costs by 75% on Gemini-2.5-Pro / Gemini-2.5-Flash and provides near-instant TTFT for large codebases.",
+        recommendation="Always ON for Google Gemini provider."
+    ),
+    "context_cache_ttl_s": SettingDefinition(
+        key="context_cache_ttl_s",
+        category=CAT_PERFORMANCE,
+        label="Context Cache Time-To-Live (TTL)",
+        value_type="int",
+        default=300,
+        range_bounds=(60, 86400),
+        description="Time-To-Live in seconds for Google Gemini explicit cachedContents sessions (default 300s / 5 minutes).",
+        impact="Determines how long server-side cached context stays active in provider GPU VRAM before expiring.",
+        recommendation="300s for interactive loops; 1800s-3600s for deep multi-module migrations."
+    ),
+    "anthropic_cache_turns": SettingDefinition(
+        key="anthropic_cache_turns",
+        category=CAT_PERFORMANCE,
+        label="Anthropic Claude Ephemeral Cache Depth",
+        value_type="int",
+        default=2,
+        range_bounds=(1, 4),
+        description="Number of recent conversation turns tagged with Anthropic ephemeral cache breakpoints (up to 4 total breakpoints including system and tools).",
+        impact="Reduces multi-turn token costs by 90% across extended agent sessions.",
+        recommendation="2 for high cache hit rates without exceeding Anthropic's 4-breakpoint limit."
+    ),
+    "prompt_cache_min_tokens": SettingDefinition(
+        key="prompt_cache_min_tokens",
+        category=CAT_PERFORMANCE,
+        label="Prompt Cache Minimum Token Threshold",
+        value_type="int",
+        default=1024,
+        range_bounds=(256, 32768),
+        description="Minimum prompt token length required before triggering automatic context cache creation or prefix cache markers.",
+        impact="Ensures small prompt snippets do not incur cache creation overhead when provider minimums are not met.",
+        recommendation="1024 tokens for optimal balance across OpenAI, Anthropic, and Google."
+    ),
     "watchdog_timeout_s": SettingDefinition(
         key="watchdog_timeout_s",
         category=CAT_PERFORMANCE,
@@ -90,10 +133,10 @@ SETTING_REGISTRY: Dict[str, SettingDefinition] = {
         category=CAT_COGNITIVE,
         label="Primary Autonomous AI Model",
         value_type="str",
-        default="gemini-3.1-pro-preview",
+        default="gemini-2.5-pro",
         description="The main foundation model invoked for architecture analysis, tool planning, code authoring, and self-healing.",
         impact="Directly dictates reasoning depth, coding quality, and generation velocity.",
-        recommendation="gemini-3.1-pro-preview for highest reasoning capability; openrouter/free for dynamic frontier open-weights."
+        recommendation="gemini-2.5-pro for highest reasoning capability and native context caching; openrouter/free for dynamic frontier open-weights."
     ),
     "default_provider": SettingDefinition(
         key="default_provider",
@@ -125,6 +168,28 @@ SETTING_REGISTRY: Dict[str, SettingDefinition] = {
         description="Optional fast code-synthesis model override invoked strictly during file editing and tool execution turns.",
         impact="Minimizes cost and accelerates execution speed during repetitive edits.",
         recommendation="Leave empty to inherit default_model."
+    ),
+    "thinking_budget": SettingDefinition(
+        key="thinking_budget",
+        category=CAT_COGNITIVE,
+        label="Frontier Thinking Budget (Tokens)",
+        value_type="int",
+        default=2048,
+        range_bounds=(0, 65536),
+        description="Maximum reasoning / thinking token budget for extended thinking frontier models (Claude 3.7 Sonnet, Gemini 2.5 Pro/Flash). Set to 0 to disable extended thinking.",
+        impact="Directly controls depth of chain-of-thought exploration before synthesizing answers.",
+        recommendation="2048 for everyday development; 4096-8192 for complex architectural refactors."
+    ),
+    "reasoning_effort": SettingDefinition(
+        key="reasoning_effort",
+        category=CAT_COGNITIVE,
+        label="OpenAI Reasoning Effort",
+        value_type="choice",
+        default="medium",
+        choices=["low", "medium", "high"],
+        description="Reasoning effort tier for OpenAI o1, o3, and o3-mini models.",
+        impact="Controls internal reasoning token depth and latency on OpenAI reasoning models.",
+        recommendation="medium for general engineering; high for complex verification."
     ),
 
     # 3. Plan B & Autonomous Resilience

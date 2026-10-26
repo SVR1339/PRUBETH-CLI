@@ -7,6 +7,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from prubeth.security.permissions import SecurityEngine
 from prubeth.persistence.database import TaskDatabase
 from prubeth.verification.polyglot import PolyglotSyntaxGate
+from prubeth.tools.shell import PersistentSubshell
 
 class ToolExecutionEngine:
     """Subsystem 4: Tool Execution Engine with Permission Checks and Audit Trail."""
@@ -16,6 +17,7 @@ class ToolExecutionEngine:
         self.db = db
         self.task_id = current_task_id
         self.mcp_mgr = mcp_mgr
+        self.subshell = PersistentSubshell(Path(self.security.workspace_root))
 
     def execute_tool(self, tool_name: str, args: Dict[str, Any], approval_cb=None) -> Tuple[bool, str]:
         """Validates permissions, runs tool, logs execution to SQLite database."""
@@ -42,9 +44,9 @@ class ToolExecutionEngine:
                 if output.startswith("Error:"):
                     success = False
             elif tool_name == "write_file":
-                output = self._write_file(target_path, target_content)
+                output = self._write_file(target_path, target_content, approval_cb=approval_cb)
             elif tool_name == "edit_file":
-                output = self._edit_file(target_path, args.get("target", ""), args.get("replacement", ""), edits=args.get("edits"))
+                output = self._edit_file(target_path, args.get("target", ""), args.get("replacement", ""), edits=args.get("edits"), approval_cb=approval_cb)
                 if output.startswith("Error:"):
                     success = False
             elif tool_name == "run_command":
@@ -64,6 +66,38 @@ class ToolExecutionEngine:
                 if "not recognized" in output:
                     output = "Git is not installed or not configured in system PATH."
                     success = True
+            elif tool_name in ["code_search", "search_code"]:
+                from prubeth.repository.index import CodebaseIndex
+                idx = CodebaseIndex()
+                results = idx.search(target_query or str(args.get("query", "")), top_k=args.get("top_k", 4))
+                if results:
+                    output = "\n\n".join([f"[{r.file_path}:{r.start_line}-{r.end_line} (score {r.score})]\n{r.snippet}" for r in results])
+                else:
+                    output = f"No code matches found for '{target_query}'"
+                success = True
+            elif tool_name in ["resolve_symbol", "get_symbol"]:
+                from prubeth.repository.index import CodebaseIndex
+                idx = CodebaseIndex()
+                sym = idx.resolve_symbol(str(args.get("name") or args.get("symbol") or target_query))
+                if sym:
+                    output = f"Symbol {sym.signature} in {sym.file_path}:{sym.start_line}-{sym.end_line}\n\n{sym.body_snippet}"
+                else:
+                    output = f"Symbol '{args.get('name') or target_query}' not found."
+                success = True
+            elif tool_name in ["find_symbol_references", "find_references", "symbol_callers"]:
+                from prubeth.repository.intelligence import RepositoryIntelligence
+                intel = RepositoryIntelligence(self.security.workspace_root)
+                target_sym = str(args.get("name") or args.get("symbol") or target_query)
+                refs = intel.find_symbol_references(target_sym)
+                if refs:
+                    lines = [f"Found {len(refs)} reference(s) to '{target_sym}':"]
+                    for r in refs:
+                        kind_tag = "[DEF]" if r.get("is_definition") else "[REF]"
+                        lines.append(f"  {kind_tag} {r['file']}:{r['line']} in {r['scope']}\n    {r['context']}")
+                    output = "\n".join(lines)
+                else:
+                    output = f"No references or callers found for symbol '{target_sym}' across repository."
+                success = True
             elif tool_name.startswith("mcp_") and self.mcp_mgr:
                 parts = tool_name.split("_", 2)
                 if len(parts) >= 3:
@@ -97,17 +131,46 @@ class ToolExecutionEngine:
             rendered = rendered[:limit] + f"\n... [Truncated {len(rendered) - limit} characters for context budgeting]"
         return rendered
 
-    def _write_file(self, path: str, content: str) -> str:
+    def _write_file(self, path: str, content: str, approval_cb: Optional[Any] = None) -> str:
+        import difflib
         _, p, _ = self.security.validate_path(path)
         valid, err = PolyglotSyntaxGate.validate_content(path, content)
         if not valid:
             raise ValueError(f"Pre-Flight Syntax Invariant Failed: {err}")
+
+        old_text = ""
+        if p.is_file():
+            try:
+                old_text = p.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                pass
+
+        from prubeth.runtime.verification import TestTimeVerifier
+        verifier = TestTimeVerifier(Path(self.security.workspace_root))
+        ok, msg = verifier.verify_patch_safety(path, old_text, content)
+        if not ok:
+            return f"Error: Pre-Flight Verification Failed: {msg}"
+
+        if approval_cb:
+            diff = "".join(difflib.unified_diff(
+                old_text.splitlines(keepends=True),
+                content.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm=""
+            ))
+            if diff:
+                approved = approval_cb("file_modification", {"path": path, "diff": diff})
+                if not approved:
+                    return f"Cancelled: Developer rejected modification to {path}."
+
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w", encoding="utf-8") as f:
             f.write(content)
         return f"Successfully wrote {len(content)} characters to {path}"
 
-    def _edit_file(self, path: str, target: str = "", replacement: str = "", edits: Optional[List[Dict[str, Any]]] = None) -> str:
+    def _edit_file(self, path: str, target: str = "", replacement: str = "", edits: Optional[List[Dict[str, Any]]] = None, approval_cb: Optional[Any] = None) -> str:
+        import difflib
         _, p, _ = self.security.validate_path(path)
         if not p.is_file():
             return f"Error: File not found: {path}"
@@ -134,38 +197,77 @@ class ToolExecutionEngine:
         else:
             if not target:
                 return f"Error: Target text cannot be empty in {path}."
-            if target not in content:
-                return f"Error: Target text not found in {path}. Make sure indentation and whitespace match exactly."
-            if content.count(target) > 1:
-                return f"Error: Target text matches multiple times in {path}. Provide more surrounding context."
-            new_content = content.replace(target, replacement, 1)
+            if target in content:
+                if content.count(target) > 1:
+                    occurrences = [i + 1 for i, line in enumerate(content.splitlines()) if target.splitlines()[0] in line]
+                    return f"Error: Target text matches multiple times in {path} (near lines {occurrences[:5]}). Provide more surrounding lines for uniqueness."
+                new_content = content.replace(target, replacement, 1)
+            else:
+                # Fuzzy fallback: Normalize CRLF vs LF and whitespace
+                norm_target = target.replace("\r\n", "\n")
+                norm_content = content.replace("\r\n", "\n")
+                if norm_target in norm_content and norm_content.count(norm_target) == 1:
+                    norm_replacement = replacement.replace("\r\n", "\n")
+                    new_content = norm_content.replace(norm_target, norm_replacement, 1)
+                    if "\r\n" in content:
+                        new_content = new_content.replace("\n", "\r\n")
+                else:
+                    # Contextual error diagnostic: find closest matching lines
+                    target_first_line = target.strip().splitlines()[0] if target.strip().splitlines() else target.strip()
+                    close_matches = []
+                    for idx, line in enumerate(content.splitlines(), 1):
+                        if target_first_line.strip() in line.strip() or (len(line.strip()) > 5 and line.strip() in target_first_line.strip()):
+                            close_matches.append(f"Line {idx}: {line[:80]}")
+                    diag = f"\nClosest candidates in {path}:\n" + "\n".join(close_matches[:3]) if close_matches else ""
+                    return f"Error: Target text not found in {path}. Indentation or whitespace may differ.{diag}"
 
-        valid, err = PolyglotSyntaxGate.validate_content(path, new_content)
-        if not valid:
-            raise ValueError(f"Pre-Flight Syntax Invariant Failed: {err}")
+        from prubeth.runtime.verification import TestTimeVerifier
+        verifier = TestTimeVerifier(Path(self.security.workspace_root))
+        ok, msg = verifier.verify_patch_safety(path, content, new_content)
+        if not ok:
+            return f"Error: Pre-Flight Verification Failed: {msg}"
+
+        if approval_cb:
+            diff = "".join(difflib.unified_diff(
+                content.splitlines(keepends=True),
+                new_content.splitlines(keepends=True),
+                fromfile=f"a/{path}",
+                tofile=f"b/{path}",
+                lineterm=""
+            ))
+            if diff:
+                approved = approval_cb("file_modification", {"path": path, "diff": diff})
+                if not approved:
+                    return f"Cancelled: Developer rejected modification to {path}."
+
         with open(p, "w", encoding="utf-8") as f:
             f.write(new_content)
         return f"Successfully modified {path}"
 
     def _run_command(self, cmd: str, timeout: int = 60) -> Tuple[int, str]:
-        res = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=str(self.security.workspace_root),
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace"
-        )
-        out = (res.stdout or "") + ("\n[STDERR]\n" + res.stderr if res.stderr else "")
+        # Use persistent stateful subshell
+        code, out = self.subshell.execute(cmd, timeout_s=timeout)
         trimmed = out.strip()
-        if res.returncode != 0:
+
+        # Head-and-Tail sliding window truncation (Claude Code & Gemini CLI Standard)
+        lines = trimmed.splitlines()
+        max_lines = 250
+        if len(lines) > max_lines:
+            head_lines = lines[:100]
+            tail_lines = lines[-150:]
+            omitted = len(lines) - 250
+            trimmed = (
+                "\n".join(head_lines)
+                + f"\n\n... [Truncated {omitted} lines of verbose command output for context efficiency] ...\n\n"
+                + "\n".join(tail_lines)
+            )
+
+        if code != 0:
             if not trimmed:
-                trimmed = f"Command failed with exit code {res.returncode}"
+                trimmed = f"Command failed with exit code {code}"
             else:
-                trimmed = f"{trimmed}\nCommand failed with exit code {res.returncode}"
-        return res.returncode, trimmed
+                trimmed = f"{trimmed}\nCommand failed with exit code {code}"
+        return code, trimmed
 
     def _grep_search(self, query: str, path: str) -> str:
         _, resolved, _ = self.security.validate_path(path)
@@ -203,3 +305,14 @@ class ToolExecutionEngine:
             if len(matches) >= 50:
                 break
         return matches
+
+    def close(self):
+        """Releases underlying resources and subshell."""
+        if hasattr(self, "subshell") and self.subshell:
+            try:
+                self.subshell.close()
+            except Exception:
+                pass
+
+    def __del__(self):
+        self.close()
