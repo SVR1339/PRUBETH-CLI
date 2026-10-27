@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PRUBETH Autonomous Developer CLI — Sovereign Global Installer for macOS & Linux
+# PRUBETH Autonomous Developer CLI — Global Installer for macOS & Linux
 # ==============================================================================
 # One-line automated installation for PRUBETH CLI directly from GitHub.
 #
@@ -30,7 +30,7 @@ cat << 'EOF'
  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
  █████████████                                                ▀█████████
  █████████████                                                 █████████
- █████████████   PRUBETH SOVEREIGN CLI — ONE-LINE INSTALLER    █████████
+ █████████████   PRUBETH CLI — ONE-LINE INSTALLER    █████████
  █████████████   Luxury Beach Theme Edition (v1.3.1)           █████████
  █████████████                                                 █████████
  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀

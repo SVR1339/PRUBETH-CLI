@@ -1,4 +1,4 @@
-"""PRUBETH Sovereign Cryptographic Integrity & Attestation Engine.
+"""PRUBETH Cryptographic Integrity & Attestation Engine.
 
 Subsystem 16: Rigorous runtime self-verification, AST integrity attestation,
 sandbox boundary security audits, and cryptographic SHA-256 state certification.
@@ -143,7 +143,7 @@ class PrubethIntegrityEngine:
 
         return {
             "all_valid": all_valid,
-            "attestation_token": f"PRUBETH-SOVEREIGN-INTEGRITY-ATTESTED-{attestation_hash[:16].upper()}",
+            "attestation_token": f"PRUBETH-INTEGRITY-ATTESTED-{attestation_hash[:16].upper()}",
             "sha256_full": attestation_hash,
             "modules_verified": module_count,
             "ast_ok": ast_ok,
@@ -158,10 +158,10 @@ class PrubethIntegrityEngine:
         }
 
     def render_report(self) -> bool:
-        """Renders the sovereign cryptographic integrity report to the console."""
+        """Renders the cryptographic integrity report to the console."""
         att = self.run_full_attestation()
 
-        title = "[bold white]PRUBETH Sovereign Runtime Cryptographic Integrity & Attestation[/bold white]"
+        title = "[bold white]PRUBETH Runtime Cryptographic Integrity & Attestation[/bold white]"
         self.console.print()
         
         table = Table(
@@ -213,10 +213,10 @@ class PrubethIntegrityEngine:
 
         if att["all_valid"]:
             badge = Panel(
-                f"[bold green]✔ Cryptographic Attestation Succeeded: 100% Sovereign Integrity Verified[/bold green]\n"
+                f"[bold green]✔ Cryptographic Attestation Succeeded: 100% Runtime Integrity Verified[/bold green]\n"
                 f"Attestation Certificate Token: [bold cyan]{att['attestation_token']}[/bold cyan]\n"
                 f"Full Runtime SHA-256 Digest: [dim]{att['sha256_full']}[/dim]",
-                title="[bold #00F5D4]Sovereign Attestation Seal: VALID[/bold #00F5D4]",
+                title="[bold #00F5D4]Attestation Seal: VALID[/bold #00F5D4]",
                 border_style="#00F5D4",
                 box=box.ROUNDED
             )

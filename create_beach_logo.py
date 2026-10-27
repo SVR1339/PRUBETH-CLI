@@ -1,4 +1,4 @@
-"""PRUBETH Sovereign Beach Theme Logo Generator.
+"""PRUBETH Beach Theme Logo Generator.
 Creates vector SVG and HTML showcase for PRUBETH full logo inspired by Mistral AI modular block grid.
 """
 
@@ -84,7 +84,7 @@ def generate_prubeth_beach_svg() -> str:
         "#0077B6"   # Row 6: Deep Royal Oceanic Blue
     ]
 
-    # Sovereign P Crest (Mistral Stepped Block Geometry on 9x9 grid)
+    # Enterprise P Crest (Mistral Stepped Block Geometry on 9x9 grid)
     # 0 = empty, 1 = tile
     emblem_grid = [
         # y=0: Sunset Coral Horizon (stepped chevron crest)
@@ -116,7 +116,7 @@ def generate_prubeth_beach_svg() -> str:
         "#00C4FF",  # 5: Turquoise Blue
         "#0088E8",  # 6: Deep Marine
         "#0055B3",  # 7: Abyssal Blue
-        "#003080",  # 8: Sovereign Anchor
+        "#003080",  # 8: Enterprise Anchor
     ]
 
     emblem_tile_size = 20
@@ -210,7 +210,7 @@ def generate_prubeth_beach_svg() -> str:
   <!-- Horizon Wave Divider Line -->
   <line x1="280" y1="298" x2="920" y2="298" stroke="url(#waveLine)" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.4" />
 
-  <!-- ==================== PRUBETH SOVEREIGN EMBLEM (MISTRAL-INSPIRED STEPPED GRID) ==================== -->
+  <!-- ==================== PRUBETH ENTERPRISE EMBLEM (MISTRAL-INSPIRED STEPPED GRID) ==================== -->
   <g id="prubeth-crest">
 {emblem_str}
   </g>
@@ -220,10 +220,10 @@ def generate_prubeth_beach_svg() -> str:
 {wordmark_str}
   </g>
 
-  <!-- Sovereign Edition Sub-text -->
+  <!-- Enterprise Edition Sub-text -->
   <g id="prubeth-subline" transform="translate(600, 475)">
     <text text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', Consolas, monospace" font-size="12" font-weight="700" letter-spacing="8" fill="#48CAE4" opacity="0.75">
-      SOVEREIGN DEVELOPER EDITION
+      ENTERPRISE DEVELOPER EDITION
     </text>
   </g>
 </svg>"""
@@ -250,7 +250,7 @@ def main():
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>PRUBETH — Beach Theme Sovereign Logo</title>
+  <title>PRUBETH — Beach Theme Enterprise Logo</title>
   <style>
     body {{
       margin: 0;
@@ -303,7 +303,7 @@ def main():
 </head>
 <body>
   <div class="container">
-    <div class="badge">PRUBETH SOVEREIGN EDITION</div>
+    <div class="badge">PRUBETH ENTERPRISE EDITION</div>
     <div class="card">
       {svg_code}
     </div>

@@ -143,7 +143,7 @@ def main():
 
     # 2. Create Commit
     commit_msg = (
-        "feat(sovereign): release PRUBETH Autonomous Developer CLI v1.3.1 (Sovereign Edition)\n\n"
+        "feat(core): release PRUBETH Autonomous Developer CLI v1.3.1 (Enterprise Commercial Edition)\n\n"
         "- All-in-one line installation from GitHub directly for Windows (install.ps1) and macOS/Linux (install.sh)\n"
         "- Dedicated Personal Engine & Local Models Hub (prubeth personal / prubeth setup --personal)\n"
         "- Zero-Daemon Local Model Auto-Discovery (scans disk manifests ~/.ollama/models)\n"
@@ -215,7 +215,7 @@ def main():
         {
             "tag_name": VERSION_TAG,
             "target_commitish": "main",
-            "name": f"PRUBETH Autonomous Developer CLI {VERSION_TAG} — Sovereign Edition",
+            "name": f"PRUBETH Autonomous Developer CLI {VERSION_TAG} — Enterprise Edition",
             "body": release_notes,
             "draft": False,
             "prerelease": False

@@ -93,7 +93,7 @@ PRUBETH is released under the **Apache 2.0 Open-Source License**:
 
 ---
 
-## 🚀 Sovereign One-Line Installation (Directly from GitHub)
+## 🚀 One-Line Installation (Directly from GitHub)
 
 Install PRUBETH CLI globally on any machine in a single command directly from GitHub — matching and surpassing Claude Code and Gemini CLI:
 

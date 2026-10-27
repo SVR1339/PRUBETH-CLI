@@ -42,7 +42,7 @@
   <!-- Horizon Wave Divider Line -->
   <line x1="280" y1="298" x2="920" y2="298" stroke="url(#waveLine)" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.4" />
 
-  <!-- ==================== PRUBETH SOVEREIGN EMBLEM (MISTRAL-INSPIRED STEPPED GRID) ==================== -->
+  <!-- ==================== PRUBETH ENTERPRISE EMBLEM (MISTRAL-INSPIRED STEPPED GRID) ==================== -->
   <g id="prubeth-crest">
       <rect x="540.0" y="65" width="20" height="20" rx="3.5" fill="#FF2A55" filter="url(#tileGlow)" />
       <rect x="564.0" y="65" width="20" height="20" rx="3.5" fill="#FF2A55" filter="url(#tileGlow)" />
@@ -200,10 +200,10 @@
       <rect x="991.1" y="429.0" width="13" height="13" rx="2.5" fill="#0077B6" />
   </g>
 
-  <!-- Sovereign Edition Sub-text -->
+  <!-- Enterprise Edition Sub-text -->
   <g id="prubeth-subline" transform="translate(600, 475)">
     <text text-anchor="middle" font-family="'JetBrains Mono', 'SF Mono', Consolas, monospace" font-size="12" font-weight="700" letter-spacing="8" fill="#48CAE4" opacity="0.75">
-      SOVEREIGN DEVELOPER EDITION
+      ENTERPRISE DEVELOPER EDITION
     </text>
   </g>
 </svg>

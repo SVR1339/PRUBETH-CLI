@@ -94,10 +94,10 @@ def print_banner():
     if len(cwd_str) > 50:
         cwd_str = "..." + cwd_str[-47:]
 
-    title_text = "[bold white]PRUBETH[/bold white] [bold #FF9F1C]SOVEREIGN CLI v1.3.1[/bold #FF9F1C] [dim](Beach Theme)[/dim]"
+    title_text = "[bold white]PRUBETH[/bold white] [bold #FF9F1C]CLI v1.3.1[/bold #FF9F1C] [dim](Beach Theme)[/dim]"
     
     lines = [
-        f"  [bold #FF3366]  ████████  [/bold #FF3366]  [bold white]PRUBETH SOVEREIGN COCKPIT[/bold white]",
+        f"  [bold #FF3366]  ████████  [/bold #FF3366]  [bold white]PRUBETH COCKPIT[/bold white]",
         f"  [bold #FF6B35]  ██    ████[/bold #FF6B35]  [dim]Repository:[/dim]  [cyan]{cwd_str}[/cyan] [dim]({branch_name})[/dim]",
         f"  [bold #FFAA00]  ██      ██[/bold #FFAA00]  [dim]Model:[/dim]       [bold cyan]{resolved['model']}[/bold cyan] [dim]({resolved['provider']})[/dim] │ [green]{profile['badge']}[/green]",
         f"  [bold #00F5D4]  ████████  [/bold #00F5D4]  [dim]Caching:[/dim]     [green]Active (Anthropic Ephemeral + Gemini GPU VRAM)[/green]",

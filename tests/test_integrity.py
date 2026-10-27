@@ -1,4 +1,4 @@
-"""Unit tests for PRUBETH Sovereign Cryptographic Integrity Engine (Subsystem 16)."""
+"""Unit tests for PRUBETH Cryptographic Integrity Engine (Subsystem 16)."""
 
 import unittest
 import tempfile
@@ -51,7 +51,7 @@ class TestPrubethIntegrityEngine(unittest.TestCase):
         """Validates full attestation pass and certificate issuance."""
         att = self.engine.run_full_attestation()
         self.assertTrue(att["all_valid"])
-        self.assertTrue(att["attestation_token"].startswith("PRUBETH-SOVEREIGN-INTEGRITY-ATTESTED-"))
+        self.assertTrue(att["attestation_token"].startswith("PRUBETH-INTEGRITY-ATTESTED-"))
         self.assertTrue(att["ast_ok"])
         self.assertTrue(att["sandbox_ok"])
         self.assertEqual(len(att["sha256_full"]), 64)
@@ -61,7 +61,7 @@ class TestPrubethIntegrityEngine(unittest.TestCase):
         result = self.engine.render_report()
         self.assertTrue(result)
         out = self.buf.getvalue()
-        self.assertIn("PRUBETH Sovereign Runtime Cryptographic Integrity", out)
+        self.assertIn("PRUBETH Runtime Cryptographic Integrity", out)
 
 if __name__ == "__main__":
     unittest.main()

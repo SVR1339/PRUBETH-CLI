@@ -189,7 +189,7 @@ def render_onboarding_wizard(console: Console, cfg_mgr: Optional[ConfigManager] 
     local_info = probe_local_ai_capabilities()
 
     # Step 1: Royal British Engineering Welcome Banner
-    banner = """[bold white]PRUBETH Sovereign Autonomous Engine — First-Time Setup Wizard[/bold white]
+    banner = """[bold white]PRUBETH Autonomous Engine — First-Time Setup Wizard[/bold white]
 [dim]Frontier Onboarding Parity (Matching Anthropic Claude Code & Google Gemini CLI Standards)[/dim]
 
 [cyan]Key Architectural Principles:[/cyan]
