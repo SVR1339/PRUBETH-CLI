@@ -22,13 +22,10 @@
 
     function Write-BeachBanner {
         Write-Host "${Coral}${Bold}"
-        Write-Host " ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"
-        Write-Host " █████████████                                                ▀█████████"
-        Write-Host " █████████████                                                 █████████"
-        Write-Host " █████████████   PRUBETH CLI — POWERSHELL INSTALLER  █████████"
-        Write-Host " █████████████   Luxury Beach Theme Edition (${Version})         █████████"
-        Write-Host " █████████████                                                 █████████"
-        Write-Host " ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀${Reset}"
+        Write-Host " ============================================================================"
+        Write-Host "   PRUBETH CLI -- AUTONOMOUS AI COPILOT & PERSONAL HUB"
+        Write-Host "   Luxury Beach Theme Edition (${Version})"
+        Write-Host " ============================================================================${Reset}"
         Write-Host ""
     }
 
@@ -39,7 +36,8 @@
 
     function Write-Success {
         param([string]$Message)
-        Write-Host "${Gold}${Bold}✔${Reset} ${White}${Message}${Reset}"
+        $CheckMark = [char]0x2714
+        Write-Host "${Gold}${Bold}${CheckMark}${Reset} ${White}${Message}${Reset}"
     }
 
     function Write-Info {
