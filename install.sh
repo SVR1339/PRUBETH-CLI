@@ -10,7 +10,7 @@
 
 set -eo pipefail
 
-VERSION="v1.3.1"
+VERSION="v2.0.0"
 REPO_OWNER="SVR1339"
 REPO_NAME="PRUBETH-CLI"
 INSTALL_DIR="${HOME}/.prubeth/bin"
@@ -31,7 +31,7 @@ cat << 'EOF'
  █████████████                                                ▀█████████
  █████████████                                                 █████████
  █████████████   PRUBETH CLI — ONE-LINE INSTALLER    █████████
- █████████████   Luxury Beach Theme Edition (v1.3.1)           █████████
+ █████████████   Luxury Beach Theme Edition (v2.0.0)           █████████
  █████████████                                                 █████████
  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
 EOF
