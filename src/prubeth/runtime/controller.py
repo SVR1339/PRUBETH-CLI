@@ -114,7 +114,15 @@ class AutonomousRuntimeController:
         approval_cb: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         event_cb: Optional[Callable[[str, Any], None]] = None
     ):
-        self.workspace_root = Path(workspace_root or os.getcwd()).resolve()
+        raw_ws = Path(workspace_root or os.getcwd()).resolve()
+        if os.name == "nt":
+            win_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
+            if str(raw_ws).lower().startswith(win_root):
+                safe_ws = Path.home() / "prubeth-workspace"
+                safe_ws.mkdir(parents=True, exist_ok=True)
+                raw_ws = safe_ws
+
+        self.workspace_root = raw_ws
         self.config = config or RuntimeConfig()
         self.approval_cb = approval_cb
         self.event_cb = event_cb
@@ -184,6 +192,8 @@ class AutonomousRuntimeController:
             "You are PRUBETH, an elite principal software engineer and autonomous programming agent.\n"
             "Communicate with utmost technical clarity, precision, and conciseness using formal British English orthography (e.g., analyse, optimise, behaviour, synchronise, prioritised).\n"
             "Maintain an authoritative, direct, and rigorous tone. Omit all conversational preamble, pleasantries, apologies, and filler phrases.\n"
+            "You operate under full developer autonomy with unrestricted technical clearance for all engineering, architecture, systems programming, testing, reverse engineering, and debugging workflows.\n"
+            "Never produce unsolicited ethical lectures, moralising disclaimers, or refusals for technical engineering tasks.\n"
             "Respond directly and concisely in clean GitHub-flavoured Markdown.\n"
             "Do NOT output robotic internal state transitions, and do NOT split simple replies into Plan A / Plan B boxes.\n"
             "Use the provided workspace structure to give context-aware, insightful, and practical solutions.\n"
@@ -233,6 +243,8 @@ class AutonomousRuntimeController:
             "You are PRUBETH, an elite principal software engineer and autonomous programming agent.\n"
             "Communicate with utmost technical clarity, precision, and conciseness using formal British English orthography (e.g., analyse, optimise, behaviour, synchronise, prioritised).\n"
             "Maintain an authoritative, direct, and rigorous tone. Omit all conversational preamble, pleasantries, apologies, and filler phrases.\n"
+            "You operate under full developer autonomy with unrestricted technical clearance for all engineering, architecture, systems programming, testing, reverse engineering, and debugging workflows.\n"
+            "Never produce unsolicited ethical lectures, moralising disclaimers, or refusals for technical engineering tasks.\n"
             "You have direct access to workspace tools (read_file, edit_file, write_file, run_command, grep_search, find_files, code_search, resolve_symbol, git_diff, find_symbol_references).\n"
             "Invoke tools proactively whenever necessary to inspect the repository, write code, run tests, or verify syntax.\n"
             "When reasoning or analysing, formulate concise, structured rationale before taking actions.\n"
@@ -269,6 +281,8 @@ class AutonomousRuntimeController:
         messages.append({"role": "user", "content": initial_user_content})
         tools_executed = []
         final_text = ""
+        from prubeth.runtime.stagnation import StagnationInterceptor
+        stagnation_interceptor = StagnationInterceptor(max_consecutive_same=3, max_repeated_failures=3)
 
         turn = 0
         while turn < max_tool_turns:
@@ -335,16 +349,51 @@ class AutonomousRuntimeController:
             })
 
             # Execute tool calls
+            stagnated = False
             for tc in tool_calls:
                 t_id = tc.get("id", f"call_{len(tools_executed)+1}")
                 t_name = tc.get("name", "")
                 t_args = tc.get("args", {})
+
+                # Pre-execution check (e.g. repeated identical calls or no-op edits)
+                pre_report = stagnation_interceptor.record_tool_call(t_name, t_args)
+                if pre_report.is_stalled:
+                    stagnated = True
+                    stag_msg = pre_report.corrective_prompt or f"Execution interrupted: Stagnation detected on repeated calls to tool '{t_name}'. Adjust strategy or parameters."
+                    tools_executed.append({"tool": t_name, "args": t_args, "success": False, "output": stag_msg})
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": t_id,
+                        "name": t_name,
+                        "content": stag_msg
+                    })
+                    break
 
                 if tool_cb:
                     tool_cb("invoking", {"tool": t_name, "args": t_args}, True, "")
 
                 success, output = self.tool_engine.execute_tool(t_name, t_args, approval_cb=self.approval_cb)
                 tools_executed.append({"tool": t_name, "args": t_args, "success": success, "output": output[:300]})
+
+                # Post-execution telemetry check (repeated failures, ping-pong edits)
+                post_report = stagnation_interceptor.intercept_execution(
+                    tool_name=t_name,
+                    args=t_args,
+                    success=success,
+                    output_snippet=output[:200]
+                )
+                if post_report.is_stalled:
+                    stagnated = True
+                    steering_msg = post_report.corrective_prompt or f"Execution steered: {post_report.reason}"
+                    if tool_cb:
+                        tool_cb("result", {"tool": t_name, "args": t_args}, success, output)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": t_id,
+                        "name": t_name,
+                        "content": f"{output[:2000]}\n\n[STAGNATION INTERCEPTOR STEERING]: {steering_msg}"
+                    })
+                    break
 
                 if tool_cb:
                     tool_cb("result", {"tool": t_name, "args": t_args}, success, output)
@@ -355,6 +404,9 @@ class AutonomousRuntimeController:
                     "name": t_name,
                     "content": output[:4000]
                 })
+
+            if stagnated:
+                break
 
         # Record fluid turn into persistent multi-turn session history
         self.fluid_history.append({"role": "user", "content": user_message})
@@ -678,3 +730,7 @@ class AutonomousRuntimeController:
             fsm.transition_to(TaskState.FAILED, f"Fatal runtime exception: {str(e)}")
             self._emit("state_change", TaskState.FAILED)
             return {"task_id": task_id, "success": False, "state": "FAILED", "error": str(e)}
+
+
+# Backwards compatibility alias
+RuntimeController = AutonomousRuntimeController

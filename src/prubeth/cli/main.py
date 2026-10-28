@@ -30,6 +30,7 @@ from rich import box
 from prubeth.runtime.controller import AutonomousRuntimeController, RuntimeConfig
 from prubeth.runtime.state_machine import TaskState
 from prubeth.config.manager import ConfigManager, PROFILES, DEFAULT_CONFIG
+from prubeth.cli.version import CLI_VERSION
 from prubeth.persistence.checkpoints import SnapshotManager
 from prubeth.cli.dashboard import (
     render_performance_dashboard,
@@ -47,6 +48,8 @@ from prubeth.cli.commands import (
     handle_bridge_command,
     handle_consensus_command,
     handle_mcp_command,
+    handle_benchmark_command,
+    handle_language_command,
     handle_init_command,
     handle_review_command,
     handle_goal_command,
@@ -63,7 +66,16 @@ from prubeth.cli.commands import (
     handle_issue_command,
     handle_timeline_command,
     handle_cache_command,
-    handle_compact_command
+    handle_compact_command,
+    handle_thinking_command,
+    handle_todo_command,
+    handle_testgen_command,
+    handle_map_command,
+    handle_lint_command,
+    handle_debug_command,
+    handle_pin_command,
+    handle_arena_command,
+    handle_verify_command
 )
 from prubeth.cli.setup import render_onboarding_wizard, execute_factory_reset
 from prubeth.repository.index import CodebaseIndex
@@ -71,6 +83,8 @@ from prubeth.repository.context import ContextExpander
 from prubeth.runtime.auto_heal import AutoHealer
 from prubeth.cli.hud import render_cockpit_hud_bar, render_cost_report
 from prubeth.persistence.tree import ConversationTree
+from prubeth.cli.prompt_engine import PrubethPromptEngine
+from prubeth.models.router import ModelAutoRouter
 
 # Initialize Rich Console with modern ANSI rendering (zero subpixel blur, no legacy cp1252 truncation)
 console = Console(legacy_windows=False)
@@ -94,16 +108,16 @@ def print_banner():
     if len(cwd_str) > 50:
         cwd_str = "..." + cwd_str[-47:]
 
-    title_text = "[bold white]PRUBETH[/bold white] [bold #FF9F1C]CLI v1.3.1[/bold #FF9F1C] [dim](Beach Theme)[/dim]"
+    title_text = f"[bold white]PRUBETH[/bold white] [bold #00F5D4]AI CLI v{CLI_VERSION}[/bold #00F5D4]"
     
     lines = [
-        f"  [bold #FF3366]  ████████  [/bold #FF3366]  [bold white]PRUBETH COCKPIT[/bold white]",
-        f"  [bold #FF6B35]  ██    ████[/bold #FF6B35]  [dim]Repository:[/dim]  [cyan]{cwd_str}[/cyan] [dim]({branch_name})[/dim]",
-        f"  [bold #FFAA00]  ██      ██[/bold #FFAA00]  [dim]Model:[/dim]       [bold cyan]{resolved['model']}[/bold cyan] [dim]({resolved['provider']})[/dim] │ [green]{profile['badge']}[/green]",
-        f"  [bold #00F5D4]  ████████  [/bold #00F5D4]  [dim]Caching:[/dim]     [green]Active (Anthropic Ephemeral + Gemini GPU VRAM)[/green]",
-        f"  [bold #00BBF9]  ██        [/bold #00BBF9]  [dim]Footprint:[/dim]   [green]26.59 MB CPU RAM │ 0 MB GPU VRAM[/green] │ [green]Sandbox: Enforced[/green]",
-        f"  [bold #0077B6]  ██        [/bold #0077B6]  [dim]Shortcuts:[/dim]   [cyan]!cmd[/cyan] [dim](kernel)[/dim] │ [cyan]@file[/cyan] [dim](context)[/dim] │ [cyan]/cache[/cyan] │ [cyan]/integrity[/cyan]",
-        f"  [bold #03045E]██████      [/bold #03045E]  [dim]──────────────────────────────────────────────────────────────────[/dim]"
+        f"  [#ef2e31]██[/#ef2e31][#f2a13b]██[/#f2a13b][#f6db43]██[/#f6db43][#aef947]██[/#aef947]      [bold white]PRUBETH AI COCKPIT[/bold white]",
+        f"  [#f06e35]██[/#f06e35]    [#5df949]██[/#5df949][#57d5f8]██[/#57d5f8]    [dim]Workspace:[/dim]   [cyan]{cwd_str}[/cyan] [dim]({branch_name})[/dim]",
+        f"  [#f3af3c]██[/#f3af3c]    [#55cef8]██[/#55cef8][#458ef6]██[/#458ef6]    [dim]Model:[/dim]       [bold cyan]{resolved['model']}[/bold cyan] [dim]({resolved['provider']})[/dim] │ [green]{profile['badge']}[/green]",
+        f"  [#92f947]██[/#92f947][#5ef993]██[/#5ef993][#5ff3f9]██[/#5ff3f9][#3a48f5]██[/#3a48f5]      [dim]Caching:[/dim]     [green]Active (Anthropic Ephemeral + Gemini GPU VRAM)[/green]",
+        f"  [#5ef99f]██[/#5ef99f]            [dim]Footprint:[/dim]   [green]26.59 MB CPU RAM │ 0 MB GPU VRAM[/green] │ [green]Sandbox: Enforced[/green]",
+        f"  [#58d8f8]██[/#58d8f8]            [dim]Shortcuts:[/dim]   [cyan]!cmd[/cyan] [dim](kernel)[/dim] │ [cyan]@file[/cyan] [dim](context)[/dim] │ [cyan]/cache[/cyan] │ [cyan]/integrity[/cyan]",
+        f"  [#3c59f6]██[/#3c59f6][#7d32f5]██[/#7d32f5]          [dim]──────────────────────────────────────────────────────────────────[/dim]"
     ]
     
     panel = Panel(
@@ -376,50 +390,63 @@ def render_model_comparison_table():
 def handle_models_command(args: list):
     cfg_mgr = ConfigManager()
     from prubeth.models.gateway import UniversalModelGateway
+    from prubeth.cli.hud import MODEL_PRICING
     gw = UniversalModelGateway(cfg_mgr)
     cfg = cfg_mgr.load_config()
     keys = cfg.get("api_keys", {})
     timeout_s = cfg.get("cloud_timeout_s", 12)
 
     if not args or args[0] in ["list", "status"]:
-        # Table 1: Strict Highest-to-Lowest Model Preference Hierarchy
-        h_table = Table(title="PRUBETH Hierarchical Model Preference Chain (Highest to Lowest)")
-        h_table.add_column("Tier / Capability", style="cyan")
-        h_table.add_column("Ranked Models (Highest → Lowest)", style="green")
-        h_table.add_column("Primary Purpose", style="yellow")
-        h_table.add_column("Fallback Trigger", style="magenta")
+        # Table 1: Full Model Roster with pricing, speed, context, and capability
+        _ROSTER = [
+            # (model_id, provider, tier_badge, ctx, speed, thinking, input_pm, output_pm, cache_disc, status_key)
+            ("gemini-4.0-preview",           "Google",      "[yellow]Tier 0[/yellow]", "2M",   "~2.4s", "✔",  2.00,  8.00, "75%", "google"),
+            ("gemini-3.1-pro-preview",        "Google",      "[green]Tier 1[/green]",  "1M",   "~1.8s", "✔",  1.25,  5.00, "75%", "google"),
+            ("gemini-2.5-pro",                "Google",      "[green]Tier 1[/green]",  "1M",   "~1.6s", "✔",  1.25,  5.00, "75%", "google"),
+            ("gemini-3.8-flash",              "Google",      "[cyan]Tier 2[/cyan]",    "1M",   "~0.6s", "—",  0.075, 0.30, "75%", "google"),
+            ("gemini-2.5-flash",              "Google",      "[cyan]Tier 2[/cyan]",    "1M",   "~0.8s", "—",  0.075, 0.30, "75%", "google"),
+            ("claude-3-7-sonnet-20250219",    "Anthropic",   "[green]Tier 1[/green]",  "200K", "~2.0s", "✔",  3.00, 15.00, "90%", "anthropic"),
+            ("claude-3-5-sonnet-20241022",    "Anthropic",   "[green]Tier 1[/green]",  "200K", "~1.8s", "—",  3.00, 15.00, "90%", "anthropic"),
+            ("claude-3-5-haiku-20241022",     "Anthropic",   "[cyan]Tier 2[/cyan]",    "200K", "~0.9s", "—",  0.80,  4.00, "90%", "anthropic"),
+            ("o3-mini",                       "OpenAI",      "[green]Tier 1[/green]",  "200K", "~2.1s", "✔",  1.10,  4.40, "50%", "openai"),
+            ("gpt-4o",                        "OpenAI",      "[cyan]Tier 2[/cyan]",    "128K", "~1.4s", "—",  2.50, 10.00, "50%", "openai"),
+            ("gpt-4o-mini",                   "OpenAI",      "[cyan]Tier 2[/cyan]",    "128K", "~0.7s", "—",  0.15,  0.60, "50%", "openai"),
+            ("deepseek-r1",                   "DeepSeek",    "[green]Tier 1[/green]",  "128K", "~3.2s", "✔",  0.55,  2.19, "75%", "deepseek"),
+            ("deepseek-v3",                   "DeepSeek",    "[cyan]Tier 2[/cyan]",    "128K", "~1.5s", "—",  0.27,  1.10, "75%", "deepseek"),
+            ("deepseek/deepseek-r1:free",     "OpenRouter",  "[dim]Tier 3[/dim]",      "128K", "~4.0s", "✔",  0.00,  0.00, "—",   "openrouter"),
+            ("qwen/qwen-2.5-coder-32b:free",  "OpenRouter",  "[dim]Tier 3[/dim]",      "32K",  "~1.2s", "—",  0.00,  0.00, "—",   "openrouter"),
+            ("ollama (local)",                "Local",       "[blue]Tier 4[/blue]",    "—",   "~0.5s", "—",  0.00,  0.00, "—",   None),
+            ("lm_studio (local)",             "Local",       "[blue]Tier 4[/blue]",    "—",   "~0.5s", "—",  0.00,  0.00, "—",   None),
+        ]
 
-        h_table.add_row(
-            "Tier 0: Frontier Experimental Preview",
-            "gemini-4.0-preview, gemini-4-argon",
-            "Cutting-edge frontier reasoning (restricted experimental access)",
-            "Auto-fallback to Tier 1 if 404/quota unavailable"
+        roster = Table(
+            title="PRUBETH Model Roster — Full Capability & Pricing Matrix",
+            box=box.ROUNDED,
+            show_lines=True,
         )
-        h_table.add_row(
-            "Tier 1: Flagship Frontier Pro",
-            "gemini-3.1-pro-preview, gemini-pro-latest, claude-3-7-sonnet",
-            "Deep reasoning, system architecture, speculative Plan B",
-            "Rate limit (429) or cloud timeout"
-        )
-        h_table.add_row(
-            "Tier 2: Frontier Velocity & Real-Time",
-            "gemini-3.8-flash, gemini-3.5-flash, gemini-flash-latest",
-            "Sub-second autonomous coding, real-time tool loops, rapid chat",
-            "Degradation (503) or quota exhaustion"
-        )
-        h_table.add_row(
-            "Tier 3: Open-Weight Frontier Free Tier",
-            "deepseek/deepseek-r1:free, meta-llama/llama-3.3-70b:free, qwen/qwen-2.5-coder-32b:free",
-            "Zero-cost cloud reasoning backup via OpenRouter",
-            "Cloud latency threshold exceeded"
-        )
-        h_table.add_row(
-            "Tier 4: Local Downloaded & Loaded",
-            "Active local GGUF/weights via LM Studio (:1234) or Ollama (:11434)",
-            "100% private, air-gapped, zero cloud cost execution",
-            "Automatic pivot when cloud takes > " + str(timeout_s) + "s"
-        )
-        console.print(h_table)
+        roster.add_column("Model",            style="bold cyan",   no_wrap=True)
+        roster.add_column("Provider",         style="magenta",     no_wrap=True)
+        roster.add_column("Tier",             justify="center")
+        roster.add_column("Context",          justify="right",     style="dim")
+        roster.add_column("Speed",            justify="right",     style="green")
+        roster.add_column("Thinking",         justify="center",    style="yellow")
+        roster.add_column("In $/M",           justify="right",     style="dim")
+        roster.add_column("Out $/M",          justify="right",     style="dim")
+        roster.add_column("Cache",            justify="center",    style="dim")
+        roster.add_column("Status",           justify="center")
+
+        for (m, prov, tier, ctx, spd, think, inp, outp, cache, sk) in _ROSTER:
+            if sk is None:
+                status = "[blue]● Local[/blue]"
+            elif keys.get(sk):
+                status = "[green]✔ Ready[/green]"
+            else:
+                status = "[dim]⚠ No key[/dim]"
+            inp_str  = f"${inp:.3f}"  if inp  > 0 else "[dim]Free[/dim]"
+            outp_str = f"${outp:.3f}" if outp > 0 else "[dim]Free[/dim]"
+            roster.add_row(m, prov, tier, ctx, spd, think, inp_str, outp_str, cache, status)
+
+        console.print(roster)
 
         # Table 2: Live Local & Cloud Provider Status
         p_table = Table(title="Model Providers, Credentials & Local Engine Status")
@@ -431,13 +458,15 @@ def handle_models_command(args: list):
         local_det = gw.detect_local_model()
         local_status = f"[bold green]● ACTIVE ({local_det['model']})[/bold green]" if local_det else "[dim]○ Standby (Offline)[/dim]"
 
-        p_table.add_row("google", "[bold green]● Active[/bold green]", "YES (***zz8g)" if keys.get("google") else "NO", cfg.get("provider_endpoints", {}).get("google", ""))
+        p_table.add_row("google",     "[bold green]● Active[/bold green]", "YES (***zz8g)" if keys.get("google") else "NO",     cfg.get("provider_endpoints", {}).get("google", ""))
         p_table.add_row("openrouter", "[bold green]● Active[/bold green]", "YES (***f09c)" if keys.get("openrouter") else "NO", cfg.get("provider_endpoints", {}).get("openrouter", ""))
-        p_table.add_row("lm_studio", local_status if local_det and local_det["provider"] == "lm_studio" else "[dim]○ Standby[/dim]", "LOCAL (Zero Cost)", cfg.get("provider_endpoints", {}).get("lm_studio", ""))
-        p_table.add_row("ollama", local_status if local_det and local_det["provider"] == "ollama" else "[dim]○ Standby[/dim]", "LOCAL (Zero Cost)", cfg.get("provider_endpoints", {}).get("ollama", ""))
+        p_table.add_row("anthropic",  "[dim]○ Via OpenRouter[/dim]",        "YES (via OR)" if keys.get("openrouter") else "NO",  "https://openrouter.ai/api/v1")
+        p_table.add_row("lm_studio",  local_status if local_det and local_det["provider"] == "lm_studio" else "[dim]○ Standby[/dim]", "LOCAL (Zero Cost)", cfg.get("provider_endpoints", {}).get("lm_studio", ""))
+        p_table.add_row("ollama",     local_status if local_det and local_det["provider"] == "ollama"    else "[dim]○ Standby[/dim]", "LOCAL (Zero Cost)", cfg.get("provider_endpoints", {}).get("ollama", ""))
         console.print(p_table)
 
-        console.print(f"[bold cyan]Auto-Switch Latency Guard:[/bold cyan] Active (Cloud calls timeout at [bold]{timeout_s}s[/bold] and auto-pivot to local loaded model).\n")
+        console.print(f"[bold cyan]Auto-Switch Latency Guard:[/bold cyan] Active (Cloud calls timeout at [bold]{timeout_s}s[/bold] and auto-pivot to local loaded model).")
+        console.print("[dim]Switch: [/dim][cyan]/model <name|alias>[/cyan]  [dim]· Benchmark: [/dim][cyan]/compare[/cyan]  [dim]· Auto-route: [/dim][cyan]/autoroute on|off[/cyan]\n")
 
     elif args[0] in ["compare", "benchmarks", "benchmark"]:
         render_model_comparison_table()
@@ -515,7 +544,7 @@ def main():
             from prubeth.cli.therapy import run_deep_configuration_wizard
             run_deep_configuration_wizard(console)
             return
-        if cmd in ["setup", "onboard", "onboarding"]:
+        if cmd in ["setup", "onboard", "onboarding", "permissions"]:
             if "--personal" in sys.argv:
                 from prubeth.cli.setup import run_personal_setup_hub
                 run_personal_setup_hub(console)
@@ -576,6 +605,39 @@ def main():
             return
         if cmd == "mcp":
             handle_mcp_command(sys.argv[2:])
+            return
+        if cmd in ["benchmark", "bench", "eval"]:
+            handle_benchmark_command(sys.argv[2:])
+            return
+        if cmd in ["language", "lang", "stack"]:
+            handle_language_command(sys.argv[2:])
+            return
+        if cmd == "thinking":
+            handle_thinking_command(sys.argv[2:])
+            return
+        if cmd == "todo":
+            handle_todo_command(sys.argv[2:])
+            return
+        if cmd in ["test-gen", "testgen"]:
+            handle_testgen_command(sys.argv[2:])
+            return
+        if cmd in ["map", "topology"]:
+            handle_map_command(sys.argv[2:])
+            return
+        if cmd in ["lint", "audit"]:
+            handle_lint_command(sys.argv[2:])
+            return
+        if cmd == "debug":
+            handle_debug_command(sys.argv[2:])
+            return
+        if cmd in ["pin", "pins"]:
+            handle_pin_command(sys.argv[2:])
+            return
+        if cmd == "arena":
+            handle_arena_command(sys.argv[2:])
+            return
+        if cmd in ["verify", "keys", "check-keys"]:
+            handle_verify_command(sys.argv[2:])
             return
         if cmd == "rollback":
             snap_mgr = SnapshotManager()
@@ -734,26 +796,36 @@ def main():
     if args.profile:
         cfg_mgr.apply_profile(args.profile)
 
-    cfg = cfg_mgr.load_config()
-
-    config = RuntimeConfig(
-        auto_approve_actions=args.auto or cfg.get("auto_approve_actions", False),
-        prefer_local_model=args.local or cfg.get("offline_mode", False),
-        model_name=args.model,
-        speculative_plan_b=cfg.get("speculative_plan_b", True),
-        auto_checkpoint=cfg.get("auto_checkpoint", True),
-        auto_rollback_on_failure=cfg.get("auto_rollback_on_failure", True),
-        plan_b_strategy=cfg.get("plan_b_strategy", "auto_pivot")
-    )
-
-    controller = AutonomousRuntimeController(
-        config=config,
-        approval_cb=None if config.auto_approve_actions else interactive_approval_handler,
-        event_cb=make_event_logger(args.output_format)
-    )
-
     # Single-shot command line task
     if args.goal:
+        workspace_root = Path.cwd().resolve()
+        if sys.platform == "win32":
+            win_sys = os.environ.get("SystemRoot", "C:\\Windows").lower()
+            if str(workspace_root).lower().startswith(win_sys):
+                safe_ws = Path.home() / "prubeth-workspace"
+                safe_ws.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.chdir(str(safe_ws))
+                    workspace_root = safe_ws
+                except Exception:
+                    pass
+
+        cfg = cfg_mgr.load_config()
+        config = RuntimeConfig(
+            auto_approve_actions=args.auto or cfg.get("auto_approve_actions", False),
+            prefer_local_model=args.local or cfg.get("offline_mode", False),
+            model_name=args.model,
+            speculative_plan_b=cfg.get("speculative_plan_b", True),
+            auto_checkpoint=cfg.get("auto_checkpoint", True),
+            auto_rollback_on_failure=cfg.get("auto_rollback_on_failure", True),
+            plan_b_strategy=cfg.get("plan_b_strategy", "auto_pivot")
+        )
+        controller = AutonomousRuntimeController(
+            workspace_root=str(workspace_root),
+            config=config,
+            approval_cb=None if config.auto_approve_actions else interactive_approval_handler,
+            event_cb=make_event_logger(args.output_format)
+        )
         user_goal = " ".join(args.goal)
         resolved = cfg_mgr.resolve_model_and_provider(args.model)
         p_info = cfg_mgr.get_active_profile_info()
@@ -770,7 +842,28 @@ def main():
             sys.stdout.flush()
         return
 
-    # Interactive REPL
+    # Interactive REPL: Ask every permission, workspace trust, and model credential upfront
+    from prubeth.cli.setup import ensure_startup_permissions
+    workspace_root = ensure_startup_permissions(console, cfg_mgr, Path.cwd().resolve())
+
+    cfg = cfg_mgr.load_config()
+    config = RuntimeConfig(
+        auto_approve_actions=args.auto or cfg.get("auto_approve_actions", False),
+        prefer_local_model=args.local or cfg.get("offline_mode", False),
+        model_name=args.model,
+        speculative_plan_b=cfg.get("speculative_plan_b", True),
+        auto_checkpoint=cfg.get("auto_checkpoint", True),
+        auto_rollback_on_failure=cfg.get("auto_rollback_on_failure", True),
+        plan_b_strategy=cfg.get("plan_b_strategy", "auto_pivot")
+    )
+
+    controller = AutonomousRuntimeController(
+        workspace_root=str(workspace_root),
+        config=config,
+        approval_cb=None if config.auto_approve_actions else interactive_approval_handler,
+        event_cb=make_event_logger(args.output_format)
+    )
+
     print_banner()
     current_model = args.model
     expander = ContextExpander()
@@ -796,8 +889,11 @@ def main():
                 "/compact", "/timeline", "/rollback", "/status", "/settings",
                 "/models", "/diff", "/help", "/cost", "/spend", "/learn",
                 "/symbols", "/callers", "/mcp", "/goal", "/commit", "/pr",
+                "/language", "/benchmark", "/thinking", "/todo", "/test-gen",
+                "/map", "/lint", "/debug", "/pin", "/pins", "/arena", "/verify",
                 "/profile", "/toggle", "/tune", "/devmode", "/planb",
-                "/exit", "/clear"
+                "/autoroute", "/autoroute on", "/autoroute off",
+                "/model", "/compare", "/exit", "/clear",
             ]
 
             def tab_completer(text: str, state: int):
@@ -844,9 +940,30 @@ def main():
 
     setup_terminal_cockpit(Path.cwd().resolve())
 
+    # Initialise the frontier prompt engine and model auto-router
+    _slash_cmd_list = [
+        "/cache", "/cache status", "/cache clear", "/cache refresh",
+        "/compact", "/timeline", "/rollback", "/status", "/settings",
+        "/models", "/diff", "/help", "/cost", "/spend", "/learn",
+        "/symbols", "/callers", "/mcp", "/goal", "/commit", "/pr",
+        "/language", "/benchmark", "/thinking", "/todo", "/test-gen",
+        "/map", "/lint", "/debug", "/pin", "/pins", "/arena", "/verify",
+        "/profile", "/toggle", "/tune", "/devmode", "/planb",
+        "/autoroute", "/autoroute on", "/autoroute off",
+        "/model", "/compare", "/exit", "/clear",
+    ]
+    _prompt_engine = PrubethPromptEngine(
+        slash_cmds=_slash_cmd_list,
+        ws_root=Path.cwd().resolve(),
+    )
+    _auto_router = ModelAutoRouter(
+        provider=cfg_mgr.resolve_model_and_provider(current_model).get("provider", "openrouter"),
+        default_model=current_model,
+        enabled=False,
+    )
+
     while True:
         try:
-            p_info = cfg_mgr.get_active_profile_info()
             resolved = cfg_mgr.resolve_model_and_provider(current_model)
             from prubeth.cli.hud import calculate_session_spend, get_current_process_memory_mb
             ram_mb = get_current_process_memory_mb()
@@ -854,45 +971,44 @@ def main():
             spend_str = f"${spend_info['total_cost_usd']:.4f}" if spend_info['total_cost_usd'] > 0 else "$0.0000"
             saved_str = f" [green](Saved: ${spend_info['total_saved_usd']:.4f})[/green]" if spend_info['total_saved_usd'] > 0 else ""
 
-            branch_name = "main"
-            try:
-                head_file = Path(".git/HEAD")
-                if head_file.exists():
-                    ref = head_file.read_text(encoding="utf-8").strip()
-                    if ref.startswith("ref: refs/heads/"):
-                        branch_name = ref.replace("ref: refs/heads/", "")
-            except Exception:
-                pass
+            # Keep auto-router in sync with current model / provider
+            _auto_router.default_model = current_model
+            _auto_router.provider = resolved.get("provider", "openrouter")
 
-            status_elements = [
-                f"[bold cyan]{resolved['model']}[/bold cyan]",
-                f"[bold green]{branch_name}[/bold green]",
-                f"[dim]{ram_mb} MB[/dim]",
-                f"[dim]{spend_str}{saved_str}[/dim]"
-            ]
-            console.print(f"[dim]prubeth [{ ' · '.join(status_elements) }][/dim]")
-            console.print(f"[bold cyan]❯[/bold cyan] ", end="")
-            prompt_input = input().strip()
+            # Determine execution mode badge
+            _mode_badge = "developermode" if getattr(config, "developer_mode", False) else "default"
+
+            try:
+                prompt_input = _prompt_engine.get_input(
+                    model=resolved["model"],
+                    provider=resolved.get("provider", ""),
+                    ram_mb=ram_mb,
+                    spend_str=spend_str + (f" · Saved {spend_info['total_saved_usd']:.4f}" if spend_info['total_saved_usd'] > 0 else ""),
+                    mode=_mode_badge,
+                )
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[yellow]Interrupted by user. Type /exit to quit.[/yellow]")
+                continue
+
             if not prompt_input:
                 continue
 
-            # Multiline input support: lines ending with \ or enclosed in """
-            if prompt_input.endswith("\\") or prompt_input.startswith('"""'):
-                accumulated = [prompt_input.rstrip("\\")]
-                in_triple = prompt_input.startswith('"""') and not (prompt_input.endswith('"""') and len(prompt_input) > 3)
-                while True:
-                    sub = input("... ").rstrip()
-                    if in_triple:
+            # Multiline input support: explicit triple quotes
+            if prompt_input.startswith('"""') or prompt_input.startswith("'''"):
+                quote_delim = prompt_input[:3]
+                accumulated = [prompt_input[3:]]
+                if not (prompt_input.endswith(quote_delim) and len(prompt_input) > 3):
+                    while True:
+                        sys.stdout.flush()
+                        try:
+                            sub = input("... ").rstrip()
+                        except (KeyboardInterrupt, EOFError):
+                            break
+                        if sub.endswith(quote_delim):
+                            accumulated.append(sub[:-3])
+                            break
                         accumulated.append(sub)
-                        if sub.endswith('"""'):
-                            break
-                    else:
-                        if sub.endswith("\\"):
-                            accumulated.append(sub.rstrip("\\"))
-                        else:
-                            accumulated.append(sub)
-                            break
-                prompt_input = "\n".join(accumulated).strip('"""').strip()
+                prompt_input = "\n".join(accumulated).strip()
 
             if prompt_input.lower() in ["/exit", "exit", "quit"]:
                 console.print("[yellow]Exiting PRUBETH CLI. Goodbye![/yellow]")
@@ -1058,6 +1174,20 @@ def main():
                     console.print("[yellow]No snapshots found to roll back to.[/yellow]")
                 continue
 
+            if prompt_input.startswith("/autoroute"):
+                parts = prompt_input.split()
+                if len(parts) > 1 and parts[1].lower() in ["on", "enable", "true", "1"]:
+                    _auto_router.enabled = True
+                    console.print("[bold green]⚡ Auto-Router ENABLED[/bold green] — PRUBETH will now suggest the optimal model tier per prompt.")
+                elif len(parts) > 1 and parts[1].lower() in ["off", "disable", "false", "0"]:
+                    _auto_router.enabled = False
+                    console.print("[dim]Auto-Router DISABLED — using configured model for all prompts.[/dim]")
+                else:
+                    state = "[bold green]ON[/bold green]" if _auto_router.enabled else "[dim]OFF[/dim]"
+                    console.print(f"[cyan]Auto-Router status:[/cyan] {state}")
+                    console.print("[dim]Usage: /autoroute on | /autoroute off[/dim]")
+                continue
+
             if prompt_input.startswith("/model") or prompt_input.startswith("/compare"):
                 parts = prompt_input.split()
                 if len(parts) > 1 and parts[1].lower() in ["compare", "benchmarks", "benchmark"]:
@@ -1097,8 +1227,9 @@ def main():
                 run_deep_configuration_wizard(console)
                 continue
 
-            if prompt_input in ["/setup", "/onboard", "/onboarding"]:
-                render_onboarding_wizard(console, cfg_mgr)
+            if prompt_input in ["/setup", "/onboard", "/onboarding", "/permissions"]:
+                from prubeth.cli.setup import ensure_startup_permissions
+                ensure_startup_permissions(console, cfg_mgr, Path.cwd().resolve())
                 continue
 
             if prompt_input.lower() in ["/personal", "/keys", "/vault", "personal", "keys"]:
@@ -1147,6 +1278,61 @@ def main():
             if prompt_input.startswith("/mcp"):
                 parts = prompt_input.split()[1:]
                 handle_mcp_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/benchmark", "/bench", "/eval")):
+                parts = prompt_input.split()[1:]
+                handle_benchmark_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/language", "/lang", "/stack")):
+                parts = prompt_input.split()[1:]
+                handle_language_command(parts, controller)
+                continue
+
+            if prompt_input.startswith("/thinking"):
+                parts = prompt_input.split()[1:]
+                handle_thinking_command(parts, controller)
+                continue
+
+            if prompt_input.startswith("/todo"):
+                parts = prompt_input.split()[1:]
+                handle_todo_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/test-gen", "/testgen")):
+                parts = prompt_input.split()[1:]
+                handle_testgen_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/map", "/topology")):
+                parts = prompt_input.split()[1:]
+                handle_map_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/lint", "/audit")):
+                parts = prompt_input.split()[1:]
+                handle_lint_command(parts, controller)
+                continue
+
+            if prompt_input.startswith("/debug"):
+                parts = prompt_input.split()[1:]
+                handle_debug_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/pin", "/pins")):
+                parts = prompt_input.split()[1:]
+                handle_pin_command(parts, controller)
+                continue
+
+            if prompt_input.startswith("/arena"):
+                parts = prompt_input.split()[1:]
+                handle_arena_command(parts, controller)
+                continue
+
+            if prompt_input.startswith(("/verify", "/keys", "/check-keys")):
+                parts = prompt_input.split()[1:]
+                handle_verify_command(parts, controller)
                 continue
 
             if prompt_input.startswith("/goal"):
@@ -1224,6 +1410,18 @@ def main():
                 handle_compact_command(parts, controller)
                 continue
 
+            if prompt_input.lower().startswith(("/branch",)):
+                parts = prompt_input.split()[1:]
+                from prubeth.cli.commands import handle_branch_command
+                handle_branch_command(parts, controller)
+                continue
+
+            if prompt_input.lower().startswith(("/eval",)):
+                parts = prompt_input.split()[1:]
+                from prubeth.cli.commands import handle_eval_command
+                handle_eval_command(parts, controller)
+                continue
+
             if prompt_input.lower().startswith(("/integrity", "/verify", "/attest")):
                 from prubeth.security.integrity import PrubethIntegrityEngine
                 PrubethIntegrityEngine(console).render_report()
@@ -1266,6 +1464,19 @@ def main():
 
             # Fluid ReAct Agent (Claude Code-Grade Dynamic Execution)
             res = cfg_mgr.resolve_model_and_provider(current_model)
+
+            # Smart auto-routing: suggest a better model tier if enabled
+            _effective_model = current_model
+            if _auto_router.enabled:
+                _decision = _auto_router.route(expanded_prompt)
+                if _decision.suggested_model and _decision.suggested_model != current_model:
+                    _effective_model = _decision.suggested_model
+                    _tier_col = {"fast": "cyan", "balanced": "green", "deep": "magenta"}.get(_decision.tier, "white")
+                    console.print(
+                        f"  [dim]⚙ Auto-Router[/dim] → [bold {_tier_col}]{_decision.tier}[/bold {_tier_col}] "
+                        f"[dim]tier — using [bold]{_effective_model}[/bold] · {_decision.reason}[/dim]"
+                    )
+
             console.print()
             streamed_any = False
             def token_streamer(token: str):
@@ -1294,7 +1505,7 @@ def main():
             try:
                 turn_result = controller.run_fluid_turn(
                     expanded_prompt,
-                    model_override=current_model,
+                    model_override=_effective_model,
                     stream_cb=token_streamer,
                     tool_cb=tool_reporter
                 )
@@ -1304,23 +1515,27 @@ def main():
                     sys.stdout.write("\n")
                     sys.stdout.flush()
 
-                # High-Density Turn Telemetry (Claude Code & Gemini CLI Parity)
-                tok_in = turn_result.get("prompt_tokens", 0)
-                tok_out = turn_result.get("candidate_tokens", 0)
+                # High-Density Turn Telemetry — model, provider, tokens, cache, reasoning, latency
+                _eff_res  = cfg_mgr.resolve_model_and_provider(_effective_model)
+                tok_in    = turn_result.get("prompt_tokens", 0)
+                tok_out   = turn_result.get("candidate_tokens", 0)
                 tok_cached = turn_result.get("cached_tokens", 0)
-                th_tok = turn_result.get("thinking_tokens", 0)
-                lat = turn_result.get("latency_s", 0.0)
-                if tok_in or tok_out or lat > 0:
-                    parts = []
-                    if tok_in or tok_out:
-                        parts.append(f"{tok_in + tok_out:,} tokens")
-                    if tok_cached:
-                        parts.append(f"[bold green]{tok_cached:,} cached[/bold green]")
-                    if th_tok:
-                        parts.append(f"[cyan]{th_tok:,} reasoning tokens[/cyan]")
-                    if lat > 0:
-                        parts.append(f"{lat:.2f}s")
-                    console.print(f"  [dim]Turn: {' · '.join(parts)}[/dim]")
+                th_tok    = turn_result.get("thinking_tokens", 0)
+                lat       = turn_result.get("latency_s", 0.0)
+
+                telemetry_parts: list[str] = [
+                    f"[bold cyan]{_eff_res['model']}[/bold cyan]",
+                    f"[dim]({_eff_res.get('provider', '')})[/dim]",
+                ]
+                if tok_in or tok_out:
+                    telemetry_parts.append(f"{tok_in + tok_out:,} tokens")
+                if tok_cached:
+                    telemetry_parts.append(f"[bold green]{tok_cached:,} cached[/bold green]")
+                if th_tok:
+                    telemetry_parts.append(f"[cyan]{th_tok:,} reasoning[/cyan]")
+                if lat > 0:
+                    telemetry_parts.append(f"{lat:.2f}s")
+                console.print(f"  [dim]↳ {' · '.join(telemetry_parts)}[/dim]")
 
                 summary = turn_result.get("text", "")[:120].replace("\n", " ")
                 conv_tree.add_turn(prompt_input, summary, turn_result.get("snapshot_id"))

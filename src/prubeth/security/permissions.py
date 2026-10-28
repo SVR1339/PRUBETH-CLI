@@ -12,23 +12,54 @@ class PermissionLevel(str, Enum):
 class SecurityEngine:
     """Subsystem 8: Security and Governance Engine."""
 
-    def __init__(self, workspace_root: Optional[str] = None, auto_approve_all: bool = False):
+    def __init__(self, workspace_root: Optional[str] = None, auto_approve_all: bool = False, developer_mode: bool = False):
         self.workspace_root = Path(workspace_root or os.getcwd()).resolve()
-        self.auto_approve_all = auto_approve_all
+        self.developer_mode = developer_mode or auto_approve_all or (os.environ.get("PRUBETH_DEVELOPER_MODE") == "1")
+        self.auto_approve_all = auto_approve_all or self.developer_mode
 
         # Default per-tool permission rules
         self.tool_policies: Dict[str, PermissionLevel] = {
             "read_file": PermissionLevel.ALLOW,
             "find_files": PermissionLevel.ALLOW,
             "grep_search": PermissionLevel.ALLOW,
+            "list_dir": PermissionLevel.ALLOW,
+            "glob_search": PermissionLevel.ALLOW,
             "git_status": PermissionLevel.ALLOW,
             "git_diff": PermissionLevel.ALLOW,
+            "git_log": PermissionLevel.ALLOW,
             "code_search": PermissionLevel.ALLOW,
             "resolve_symbol": PermissionLevel.ALLOW,
             "find_symbol_references": PermissionLevel.ALLOW,
-            "write_file": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
-            "edit_file": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
-            "run_command": PermissionLevel.ALLOW if auto_approve_all else PermissionLevel.ASK,
+            "code_structure": PermissionLevel.ALLOW,
+            "find_callers": PermissionLevel.ALLOW,
+            "find_callees": PermissionLevel.ALLOW,
+            "find_type_definition": PermissionLevel.ALLOW,
+            "find_implementations": PermissionLevel.ALLOW,
+            "detect_circular_imports": PermissionLevel.ALLOW,
+            "trace_data_flow": PermissionLevel.ALLOW,
+            "find_dead_code": PermissionLevel.ALLOW,
+            "rank_central_files": PermissionLevel.ALLOW,
+            "explain_symbol": PermissionLevel.ALLOW,
+            "lint_checker": PermissionLevel.ALLOW,
+            "type_checker": PermissionLevel.ALLOW,
+            "coverage_analyser": PermissionLevel.ALLOW,
+            "patch_verifier": PermissionLevel.ALLOW,
+            "todo": PermissionLevel.ALLOW,
+            "test_gen": PermissionLevel.ALLOW,
+            "security_linter": PermissionLevel.ALLOW,
+            "crash_debugger": PermissionLevel.ALLOW,
+            "spec_contract": PermissionLevel.ALLOW,
+            "test_runner": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "benchmark": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "heal": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "write_file": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "edit_file": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "delete_file": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "copy_file": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "move_file": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "run_command": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "run_python": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
+            "git_commit": PermissionLevel.ALLOW if self.auto_approve_all else PermissionLevel.ASK,
         }
 
         # Lethal commands blacklisted regardless of approval mode
@@ -41,11 +72,11 @@ class SecurityEngine:
 
         # Sensitive credential redaction patterns (DevSecOps)
         self.secret_patterns = [
-            (re.compile(r'(?i)(?:api_key|apikey|secret|token|password|auth|bearer)\s*[:=]\s*["\']?([a-zA-Z0-9_\-]{16,})["\']?'), r'***REDACTED***'),
-            (re.compile(r'sk-[a-zA-Z0-9]{20,}'), '[REDACTED_OPENAI_KEY]'),
             (re.compile(r'sk-ant-[a-zA-Z0-9_\-]{20,}'), '[REDACTED_ANTHROPIC_KEY]'),
-            (re.compile(r'AIza[0-9A-Za-z\-_]{35}'), '[REDACTED_GEMINI_KEY]'),
+            (re.compile(r'sk-(?:proj-|or-)?[a-zA-Z0-9_\-]{20,}'), '[REDACTED_OPENAI_KEY]'),
+            (re.compile(r'AIza[0-9A-Za-z\-_]{30,40}'), '[REDACTED_GEMINI_KEY]'),
             (re.compile(r'ghp_[a-zA-Z0-9]{36}'), '[REDACTED_GITHUB_TOKEN]'),
+            (re.compile(r'(?i)(?:api_key|apikey|secret|token|password|auth|bearer)\s*[:=]\s*["\']?([a-zA-Z0-9_\-]{16,})["\']?'), r'***REDACTED***'),
         ]
 
     def redact_secrets(self, text: str) -> str:
@@ -102,3 +133,40 @@ class SecurityEngine:
                 return False, f"PERMISSION REQUIRED: Tool '{tool_name}' requires approval but no interactive prompt was provided."
 
         return True, ""
+
+    def enable_unrestricted_developer_mode(self) -> None:
+        """Enables unconstrained developer clearance across all workspace and runtime tools.
+        
+        Preserves solely the lethal blacklist (e.g. root filesystem destruction) while eliminating
+        all interactive blocking prompts for standard engineering tools.
+        """
+        self.developer_mode = True
+        self.auto_approve_all = True
+        for tool_name in self.tool_policies:
+            self.tool_policies[tool_name] = PermissionLevel.ALLOW
+
+    def is_developer_unrestricted(self) -> bool:
+        """Returns True if developer is operating with frictionless clearance."""
+        return self.developer_mode or self.auto_approve_all
+
+    def grant_full_clearance(self) -> None:
+        """Alias for enable_unrestricted_developer_mode."""
+        self.enable_unrestricted_developer_mode()
+
+    def configure_tool_policy(self, tool_name: str, level: PermissionLevel) -> None:
+        """Customizes policy level for an individual tool."""
+        self.tool_policies[tool_name] = level
+
+    def is_catastrophic_command(self, cmd: str) -> Tuple[bool, str]:
+        """Checks if a command contains non-negotiable catastrophic destruction strings."""
+        lowered = cmd.lower().strip()
+        for dangerous in self.hard_denylist:
+            if dangerous in lowered:
+                return True, dangerous
+        return False, ""
+
+    def is_dummy_secret(self, text: str) -> bool:
+        """Checks if a potential secret match is an innocuous test/dummy fixture."""
+        lowered = text.lower()
+        dummy_markers = ["test", "dummy", "fake", "mock", "sample", "example", "placeholder", "0000"]
+        return any(m in lowered for m in dummy_markers)

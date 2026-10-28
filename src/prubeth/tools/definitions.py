@@ -4,7 +4,7 @@ Defines the core workspace engineering tool specifications and converts them
 into provider-native schemas for Google Gemini, Anthropic Claude, and OpenAI/OpenRouter.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 RAW_TOOL_DEFINITIONS = [
     {
@@ -155,7 +155,7 @@ RAW_TOOL_DEFINITIONS = [
     }
 ]
 
-def to_google_tools() -> List[Dict[str, Any]]:
+def to_google_tools(extra_tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Converts tools into Google Gemini v1beta functionDeclarations schema."""
     type_map = {
         "string": "STRING",
@@ -184,10 +184,31 @@ def to_google_tools() -> List[Dict[str, Any]]:
                 "required": tool.get("required", [])
             }
         })
+
+    if extra_tools:
+        for xt in extra_tools:
+            schema = xt.get("input_schema", {})
+            props = {}
+            for p_name, p_meta in schema.get("properties", {}).items():
+                p_type = p_meta.get("type", "string") if isinstance(p_meta, dict) else "string"
+                p_desc = p_meta.get("description", "") if isinstance(p_meta, dict) else ""
+                props[p_name] = {
+                    "type": type_map.get(p_type, "STRING"),
+                    "description": p_desc
+                }
+            declarations.append({
+                "name": xt["name"],
+                "description": xt.get("description", ""),
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": props,
+                    "required": schema.get("required", [])
+                }
+            })
     
     return [{"function_declarations": declarations}]
 
-def to_anthropic_tools() -> List[Dict[str, Any]]:
+def to_anthropic_tools(extra_tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Converts tools into Anthropic Claude Messages API schema."""
     tools = []
     for tool in RAW_TOOL_DEFINITIONS:
@@ -200,9 +221,18 @@ def to_anthropic_tools() -> List[Dict[str, Any]]:
                 "required": tool.get("required", [])
             }
         })
+
+    if extra_tools:
+        for xt in extra_tools:
+            tools.append({
+                "name": xt["name"],
+                "description": xt.get("description", ""),
+                "input_schema": xt.get("input_schema") or {"type": "object", "properties": {}}
+            })
+
     return tools
 
-def to_openai_tools() -> List[Dict[str, Any]]:
+def to_openai_tools(extra_tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Converts tools into OpenAI / OpenRouter function calling schema."""
     tools = []
     for tool in RAW_TOOL_DEFINITIONS:
@@ -218,4 +248,16 @@ def to_openai_tools() -> List[Dict[str, Any]]:
                 }
             }
         })
+
+    if extra_tools:
+        for xt in extra_tools:
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": xt["name"],
+                    "description": xt.get("description", ""),
+                    "parameters": xt.get("input_schema") or {"type": "object", "properties": {}}
+                }
+            })
+
     return tools

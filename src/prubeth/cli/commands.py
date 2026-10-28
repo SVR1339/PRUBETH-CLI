@@ -7,6 +7,7 @@ Enforces PRINCE3 Zero Font Blur standard and SE 3.0 deterministic invariants.
 
 import sys
 import os
+import re
 import socket
 import json
 import time
@@ -362,7 +363,8 @@ def handle_mcp_command(args: List[str], controller: Any = None):
             console.print(Panel(
                 "[dim]No external Model Context Protocol (MCP) servers registered.[/dim]\n"
                 "[cyan]Register an MCP server with:[/cyan] /mcp add <name> <command> [args...]\n"
-                "[dim]Example: /mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db[/dim]",
+                "[cyan]Install an official preset:[/cyan] /mcp presets  OR  /mcp install <preset>\n"
+                "[dim]Example: /mcp install sqlite  or  /mcp add sqlite uvx mcp-server-sqlite --db-path ./app.db[/dim]",
                 title="🔌 Model Context Protocol (MCP) Registry",
                 border_style="cyan",
                 box=box.ROUNDED
@@ -371,9 +373,10 @@ def handle_mcp_command(args: List[str], controller: Any = None):
 
         table = Table(title="🔌 Registered MCP Servers & Tool Providers", box=box.ROUNDED)
         table.add_column("Server Name", style="bold cyan")
+        table.add_column("Scope", style="blue")
         table.add_column("Command", style="white")
         table.add_column("Connection Status", style="green")
-        table.add_column("Discovered Tools", justify="right", style="yellow")
+        table.add_column("Tools", justify="right", style="yellow")
         table.add_column("Resources", justify="right", style="magenta")
 
         for s in servers:
@@ -381,12 +384,66 @@ def handle_mcp_command(args: List[str], controller: Any = None):
             cmd_str = f"{s['command']} {' '.join(s['args'])}".strip()
             table.add_row(
                 s["name"],
+                s.get("scope", "workspace").capitalize(),
                 cmd_str,
                 status,
                 str(s["tools_count"]),
                 str(s["resources_count"])
             )
         console.print(table)
+
+    elif action == "presets":
+        from prubeth.mcp.manager import MCP_PRESETS
+        table = Table(title="📦 Official MCP Tool Server Presets", box=box.ROUNDED)
+        table.add_column("Preset Key", style="bold cyan")
+        table.add_column("Default Command", style="white")
+        table.add_column("Description", style="dim")
+        table.add_column("Install Shortcut", style="green")
+
+        for k, p in MCP_PRESETS.items():
+            cmd_str = f"{p['command']} {' '.join(p['args'])}"
+            table.add_row(k, cmd_str, p["description"], f"/mcp install {k}")
+        console.print(table)
+        console.print("[dim]Install globally across all projects using:[/dim] [cyan]/mcp install <preset> --global[/cyan]\n")
+
+    elif action == "install":
+        if len(args) < 2:
+            console.print("[yellow]Usage: /mcp install <preset_key> [--global][/yellow]")
+            return
+        preset_key = args[1].lower()
+        is_global = "--global" in args or "-g" in args
+        ok, msg = mcp_mgr.install_preset(preset_key, is_global=is_global)
+        color = "green" if ok else "red"
+        console.print(f"[bold {color}]{msg}[/bold {color}]")
+
+    elif action == "test":
+        if len(args) < 2:
+            console.print("[yellow]Usage: /mcp test <server_name>[/yellow]")
+            return
+        target_name = args[1]
+        console.print(f"[dim cyan]Testing MCP handshake & capabilities for '{target_name}'...[/dim cyan]")
+        report = mcp_mgr.test_server(target_name)
+        if report.get("success"):
+            console.print(Panel(
+                f"[bold green]✔ MCP Server '{target_name}' Connected Successfully![/bold green]\n\n"
+                f"• Latency: [bold white]{report.get('latency_s')}s[/bold white]\n"
+                f"• Discovered Tools: [bold yellow]{report.get('tool_count')}[/bold yellow]\n"
+                f"• Discovered Resources: [bold magenta]{report.get('resource_count')}[/bold magenta]\n"
+                + "\n".join([f"  - `{t['name']}`: {t['description']}" for t in report.get("tools", [])[:5]])
+                + (f"\n  [dim]... and {len(report.get('tools', [])) - 5} more tools[/dim]" if len(report.get('tools', [])) > 5 else ""),
+                title=f"🔌 MCP Test Report: {target_name}",
+                border_style="green",
+                box=box.ROUNDED
+            ))
+        else:
+            console.print(Panel(
+                f"[bold red]❌ MCP Server '{target_name}' Connection Failed[/bold red]\n\n"
+                f"Error: {report.get('error')}\n"
+                f"Duration: {report.get('latency_s', 0)}s",
+                title=f"🔌 MCP Test Report: {target_name}",
+                border_style="red",
+                box=box.ROUNDED
+            ))
 
     elif action == "tools":
         all_tools = mcp_mgr.get_all_tools()
@@ -409,45 +466,30 @@ def handle_mcp_command(args: List[str], controller: Any = None):
 
     elif action == "add":
         if len(args) < 3:
-            console.print("[yellow]Usage: /mcp add <name> <command> [args...][/yellow]")
+            console.print("[yellow]Usage: /mcp add <name> <command> [args...] [--global][/yellow]")
             return
-        name = args[1]
-        cmd = args[2]
-        s_args = args[3:] if len(args) > 3 else []
-        mcp_mgr.register_server(name, cmd, s_args)
-
-        # Save to mcp.json
-        cfg_path = mcp_mgr.config_path
-        data = {"mcpServers": {}}
-        if cfg_path.exists():
-            try:
-                data = json.loads(cfg_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        if "mcpServers" not in data:
-            data["mcpServers"] = {}
-        data["mcpServers"][name] = {"command": cmd, "args": s_args}
-        cfg_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-        console.print(f"[bold green]Successfully registered MCP server '{name}'.[/bold green]")
+        is_global = "--global" in args or "-g" in args
+        clean_args = [a for a in args if a not in ["--global", "-g"]]
+        name = clean_args[1]
+        cmd = clean_args[2]
+        s_args = clean_args[3:] if len(clean_args) > 3 else []
+        saved_path = mcp_mgr.save_server_config(name, cmd, s_args, is_global=is_global)
+        scope = "Globally" if is_global else "In workspace"
+        console.print(f"[bold green]Successfully registered MCP server '{name}' {scope} ({saved_path}).[/bold green]")
 
     elif action == "remove":
         if len(args) < 2:
-            console.print("[yellow]Usage: /mcp remove <name>[/yellow]")
+            console.print("[yellow]Usage: /mcp remove <name> [--global][/yellow]")
             return
-        name = args[1]
-        mcp_mgr.unregister_server(name)
-
-        cfg_path = mcp_mgr.config_path
-        if cfg_path.exists():
-            try:
-                data = json.loads(cfg_path.read_text(encoding="utf-8"))
-                if "mcpServers" in data and name in data["mcpServers"]:
-                    del data["mcpServers"][name]
-                    cfg_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            except Exception:
-                pass
-        console.print(f"[bold green]Unregistered MCP server '{name}'.[/bold green]")
+        is_global = "--global" in args or "-g" in args
+        clean_args = [a for a in args if a not in ["--global", "-g"]]
+        name = clean_args[1]
+        ok = mcp_mgr.remove_server_config(name, is_global=is_global)
+        if not ok:
+            # Fallback to local unregister
+            mcp_mgr.unregister_server(name)
+        scope = "global" if is_global else "workspace"
+        console.print(f"[bold green]Unregistered MCP server '{name}' from {scope} configuration.[/bold green]")
 
     elif action == "call":
         if len(args) < 3:
@@ -466,7 +508,7 @@ def handle_mcp_command(args: List[str], controller: Any = None):
         console.print(Panel(res, title=f"MCP Result: {s_name}::{t_name}", border_style=status_color, box=box.ROUNDED))
 
     else:
-        console.print("[yellow]Usage: /mcp [list | tools | add <name> <cmd> [args] | remove <name> | call <server> <tool> [args]][/yellow]")
+        console.print("[yellow]Usage: /mcp [list | presets | install <preset> | add <name> <cmd> [args] | remove <name> | test <name> | call <server> <tool> [args] | tools][/yellow]")
 
 def handle_init_command(workspace_root: Optional[Path] = None):
     """Auto-detects project stack and generates production-ready PRUBETH.md."""
@@ -572,7 +614,7 @@ def handle_goal_command(args: List[str], controller: Any = None):
             console.print(Panel(
                 "[dim]No autonomous goals have been recorded in .prubeth/goals/ yet.[/dim]\n"
                 "[cyan]Launch a goal with:[/cyan] /goal <objective>\n"
-                "[dim]Example: /goal 'Implement OAuth2 login with GitHub and add unit tests'[/dim]",
+                "[dim]Example: /goal 'Implement JWT auth token validator and add unit tests'[/dim]",
                 title="[GOALS] PRUBETH Long-Horizon Goal Status",
                 border_style="cyan",
                 box=box.ROUNDED
@@ -1011,9 +1053,9 @@ def handle_bio_command(args: List[str], controller: Any = None):
         ))
 
 def handle_migrate_command(args: List[str], controller: Any = None):
-    """Handles '/migrate' command: enterprise-scale zero-babysitting codebase migrations."""
-    from prubeth.runtime.enterprise import EnterpriseMigrator
-    migrator = EnterpriseMigrator(controller)
+    """Handles '/migrate' command: autonomous zero-babysitting codebase migrations."""
+    from prubeth.runtime.enterprise import AutonomousCodebaseMigrator
+    migrator = AutonomousCodebaseMigrator(controller)
 
     if not args:
         console.print("[yellow]Usage: /migrate <migration_objective>[/yellow]")
@@ -1021,16 +1063,16 @@ def handle_migrate_command(args: List[str], controller: Any = None):
         return
 
     objective = " ".join(args).strip()
-    console.print(f"  [dim cyan][MIGRATE] Launching autonomous enterprise migration: [bold white]{objective}[/bold white]...[/dim cyan]")
+    console.print(f"  [dim cyan][MIGRATE] Launching autonomous codebase migration: [bold white]{objective}[/bold white]...[/dim cyan]")
     res = migrator.execute_migration(objective)
 
     if res.get("success"):
         console.print(Panel(
-            f"[bold green][OK] Enterprise Migration Completed Successfully![/bold green]\n"
+            f"[bold green][OK] Codebase Migration Completed Successfully![/bold green]\n"
             f"- **Objective**: {objective}\n"
             f"- **Files Refactored**: {len(res.get('transformed_files', []))}\n"
             f"- **Verification Snapshot**: `{res.get('snapshot_id')}`",
-            title="[MIGRATION] Enterprise Migration Report",
+            title="[MIGRATION] Autonomous Migration Report",
             border_style="green",
             box=box.ROUNDED
         ))
@@ -1038,9 +1080,9 @@ def handle_migrate_command(args: List[str], controller: Any = None):
         console.print(f"[bold red]Migration Error:[/bold red] {res.get('error')}")
 
 def handle_issue_command(args: List[str], controller: Any = None):
-    """Handles '/issue' command: autonomous zero-babysitting GitHub ticket resolver."""
-    from prubeth.runtime.enterprise import EnterpriseTicketResolver
-    resolver = EnterpriseTicketResolver(controller)
+    """Handles '/issue' command: autonomous zero-babysitting defect & bug resolver."""
+    from prubeth.runtime.enterprise import AutonomousIssueResolver
+    resolver = AutonomousIssueResolver(controller)
 
     if not args:
         console.print("[yellow]Usage: /issue <issue_description>[/yellow]")
@@ -1048,7 +1090,7 @@ def handle_issue_command(args: List[str], controller: Any = None):
         return
 
     issue_text = " ".join(args).strip()
-    console.print(f"  [dim cyan][ISSUE] Resolving GitHub ticket autonomously: [bold white]{issue_text[:60]}[/bold white]...[/dim cyan]")
+    console.print(f"  [dim cyan][ISSUE] Resolving issue autonomously: [bold white]{issue_text[:60]}[/bold white]...[/dim cyan]")
     res = resolver.resolve_issue(issue_text)
 
     if res.get("success"):
@@ -1232,6 +1274,749 @@ def handle_compact_command(args: List[str], controller: Any = None):
         border_style="green",
         box=box.ROUNDED
     ))
+
+def handle_benchmark_command(args: List[str], controller: Any = None):
+    """Executes the standard PRUBETH Autonomous Engineering Benchmark Battery."""
+    from prubeth.evaluation.benchmark import AutonomousBenchmarkRunner, STANDARD_ENGINEERING_BENCHMARKS
+    console.print("[dim cyan]⚡ Initiating PRUBETH Autonomous Engineering Evaluation Battery...[/dim cyan]\n")
+
+    runner = AutonomousBenchmarkRunner(controller=controller)
+    report = runner.run_benchmark()
+
+    table = Table(title="📊 PRUBETH Autonomous Engineering Evaluation Benchmark (AI-DLC / SE 3.0)", box=box.ROUNDED)
+    table.add_column("Benchmark Task", style="bold cyan")
+    table.add_column("Outcome", style="bold green")
+    table.add_column("Turns Used", justify="right", style="yellow")
+    table.add_column("Latency", justify="right", style="white")
+    table.add_column("Plan B Engaged", justify="center", style="magenta")
+
+    for r in report.results:
+        status_str = "[bold green]PASS[/bold green]" if r.success else "[bold red]FAIL[/bold red]"
+        pb_str = "[yellow]YES[/yellow]" if r.plan_b_triggered else "[dim]NO[/dim]"
+        table.add_row(
+            r.task_name,
+            status_str,
+            str(r.turns_used),
+            f"{r.duration_s}s",
+            pb_str
+        )
+
+    console.print(table)
+    console.print(Panel(
+        f"[bold green]✔ Autonomous Benchmark Battery Completed![/bold green]\n\n"
+        f"• **Autonomy Quotient (AQ)**: [bold cyan]{report.autonomy_quotient}%[/bold cyan]\n"
+        f"• **Tasks Completed**: [bold white]{report.completed_tasks} / {report.total_tasks}[/bold white]\n"
+        f"• **Mean Latency**: [bold white]{report.average_latency_s}s[/bold white]\n"
+        f"• **Total Execution Turns**: [bold yellow]{report.total_turns}[/bold yellow]\n"
+        f"• **Deterministic Recovery Grade**: [bold green]Tier 1 Engineering Standard[/bold green]",
+        title="🏆 Evaluation Benchmark Scorecard",
+        border_style="green",
+        box=box.ROUNDED
+    ))
+
+def handle_language_command(args: List[str], controller: Any = None):
+    """Handles 'prubeth language' or '/language' command: inspects, switches, or lists language stacks."""
+    from prubeth.polyglot.manager import PolyglotLanguageManager
+    from prubeth.polyglot.stacks import SUPPORTED_STACKS
+    root = controller.workspace_root if controller else Path.cwd()
+    mgr = PolyglotLanguageManager(root)
+
+    action = args[0].lower() if args else "status"
+
+    if action in ["status", "current"]:
+        active = mgr.resolve_active_stack()
+        configured = mgr.get_configured_language()
+        console.print(Panel(
+            f"[bold cyan]Active Language Ecosystem:[/bold cyan] [bold white]{active.name}[/bold white] ([magenta]{active.id}[/magenta])\n"
+            f"[bold cyan]Configured Preference:[/bold cyan] [bold white]{configured.upper()}[/bold white]\n"
+            f"[bold cyan]Extensions:[/bold cyan] {', '.join(active.extensions)}\n"
+            f"[bold cyan]Verification Test Command:[/bold cyan] [bold green]`{active.default_test_cmd}`[/bold green]\n"
+            f"[bold cyan]Build Command:[/bold cyan] [bold yellow]`{active.default_build_cmd}`[/bold yellow]\n"
+            f"[bold cyan]Lint / Static Analysis:[/bold cyan] [bold dim]`{active.default_lint_cmd}`[/bold dim]\n\n"
+            f"[dim]To switch default language:[/dim] [cyan]/language set <python|typescript|rust|go|java|csharp|cpp|dart|php|ruby|swift|kotlin|auto>[/cyan]\n"
+            f"[dim]To view all supported ecosystems:[/dim] [cyan]/language list[/cyan]",
+            title="🌐 PRUBETH Polyglot Language Stack",
+            border_style="cyan",
+            box=box.ROUNDED
+        ))
+    elif action in ["list", "all"]:
+        table = Table(title="🌐 Supported Polyglot Language Stacks & Toolchains", box=box.ROUNDED)
+        table.add_column("Stack ID", style="bold cyan")
+        table.add_column("Ecosystem", style="white")
+        table.add_column("Extensions", style="dim")
+        table.add_column("Test Runner", style="green")
+        table.add_column("Status", justify="center", style="magenta")
+
+        active = mgr.resolve_active_stack()
+        configured = mgr.get_configured_language()
+
+        for s_id, s in SUPPORTED_STACKS.items():
+            status = []
+            if s.id == active.id:
+                status.append("[bold green]ACTIVE[/bold green]")
+            if s.id == configured:
+                status.append("[bold cyan]DEFAULT[/bold cyan]")
+            status_str = " | ".join(status) if status else "[dim]AVAILABLE[/dim]"
+
+            table.add_row(
+                s.id,
+                s.name,
+                ", ".join(s.extensions),
+                s.default_test_cmd,
+                status_str
+            )
+        console.print(table)
+        console.print(f"[dim]Current preference is set to: [bold cyan]{configured}[/bold cyan]. Change using [cyan]/language set <id>[/cyan][/dim]\n")
+    elif action in ["set", "switch", "use"]:
+        target_lang = args[1] if len(args) > 1 else ""
+        if not target_lang:
+            console.print("[yellow]Usage: /language set <python|typescript|rust|go|java|csharp|cpp|dart|php|ruby|swift|kotlin|auto>[/yellow]")
+            return
+        ok, msg = mgr.set_default_language(target_lang)
+        color = "green" if ok else "red"
+        console.print(f"[bold {color}]{msg}[/bold {color}]")
+    else:
+        target_lang = action
+        ok, msg = mgr.set_default_language(target_lang)
+        if ok:
+            console.print(f"[bold green]{msg}[/bold green]")
+        else:
+            console.print("[yellow]Usage: /language [status | list | set <stack_id>][/yellow]")
+
+def handle_thinking_command(args: List[str], controller: Any = None):
+    """Handles '/thinking' or 'prubeth thinking': inspects or modifies reasoning token budgets."""
+    cfg_mgr = controller.gateway.cfg_mgr if controller and hasattr(controller, "gateway") else ConfigManager()
+    cfg = cfg_mgr.load_config()
+
+    if not args:
+        budget = cfg.get("thinking_budget", 2048)
+        effort = cfg.get("reasoning_effort", "medium")
+        current_model = cfg.get("default_model", "gemini-2.5-pro")
+
+        table = Table(title="🧠 Reasoning Token & Extended Thinking Budget", box=box.ROUNDED)
+        table.add_column("Parameter", style="bold cyan")
+        table.add_column("Current Value", style="bold green")
+        table.add_column("Description", style="white")
+
+        table.add_row("Thinking Budget", f"{budget} tokens", "Reasoning tokens allocated to Claude 3.7 & Gemini 2.5")
+        table.add_row("Reasoning Effort", effort.upper(), "OpenAI reasoning intensity (low | medium | high)")
+        table.add_row("Active Model", current_model, "Primary model handling cognitive tasks")
+
+        console.print(table)
+        console.print("[dim]Adjust budget using:[/dim] [cyan]/thinking <0|1024|2048|4096|8192|16384>[/cyan] [dim]or[/dim] [cyan]/thinking effort <low|medium|high>[/cyan]\n")
+        return
+
+    sub = args[0].lower()
+    if sub in ["effort", "reasoning"]:
+        level = args[1].lower() if len(args) > 1 else "medium"
+        if level in ["low", "medium", "high"]:
+            cfg_mgr.set("reasoning_effort", level)
+            console.print(f"[bold green]✔ Configured reasoning effort to '{level.upper()}'.[/bold green]")
+        else:
+            console.print("[yellow]Usage: /thinking effort <low|medium|high>[/yellow]")
+    elif sub.isdigit():
+        new_budget = int(sub)
+        cfg_mgr.set("thinking_budget", new_budget)
+        mode_desc = "Disabled (Standard Velocity)" if new_budget == 0 else f"{new_budget} tokens (Extended Reasoning)"
+        console.print(f"[bold green]✔ Configured thinking budget to {new_budget} tokens ({mode_desc}).[/bold green]")
+    elif sub in ["max", "deep"]:
+        cfg_mgr.set("thinking_budget", 16384)
+        cfg_mgr.set("reasoning_effort", "high")
+        console.print("[bold green]✔ Configured maximum thinking budget: 16,384 tokens (High Effort).[/bold green]")
+    elif sub in ["off", "disable", "fast"]:
+        cfg_mgr.set("thinking_budget", 0)
+        cfg_mgr.set("reasoning_effort", "low")
+        console.print("[bold green]✔ Extended thinking disabled (Fast Velocity Mode active).[/bold green]")
+    else:
+        console.print("[yellow]Usage: /thinking [ <tokens> | max | off | effort <low|medium|high> ][/yellow]")
+
+def handle_todo_command(args: List[str], controller: Any = None):
+    """Handles '/todo' or 'prubeth todo': manages interactive workspace objectives and task checklist."""
+    workspace_root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    todo_file = workspace_root / ".prubeth" / "TODO.json"
+    todo_md = workspace_root / "TODO.md"
+    todo_file.parent.mkdir(parents=True, exist_ok=True)
+
+    todos: List[Dict[str, Any]] = []
+    if todo_file.exists():
+        try:
+            todos = json.loads(todo_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    action = args[0].lower() if args else "list"
+
+    if action in ["list", "show", "status"]:
+        if not todos:
+            console.print(Panel(
+                "[dim]No active tasks in workspace todo checklist.[/dim]\n"
+                "[cyan]Add a task with:[/cyan] /todo add <task description>\n"
+                "[dim]Example: /todo add Implement JWT token validation in auth/jwt.py[/dim]",
+                title="📋 Workspace Objective Checklist (TODO.md)",
+                border_style="cyan",
+                box=box.ROUNDED
+            ))
+            return
+
+        table = Table(title="📋 Workspace Objective Checklist (SE 3.0)", box=box.ROUNDED)
+        table.add_column("ID", style="bold cyan", justify="right")
+        table.add_column("Status", justify="center")
+        table.add_column("Objective", style="white")
+        table.add_column("Created", style="dim")
+
+        completed = sum(1 for t in todos if t.get("status") == "DONE")
+        for t in todos:
+            st = t.get("status", "PENDING")
+            if st == "DONE":
+                status_badge = "[bold green]✔ DONE[/bold green]"
+            elif st == "IN_PROGRESS":
+                status_badge = "[bold yellow]⚡ ACTIVE[/bold yellow]"
+            else:
+                status_badge = "[dim]PENDING[/dim]"
+
+            table.add_row(
+                str(t.get("id")),
+                status_badge,
+                t.get("title", ""),
+                t.get("created_at", "")[:10]
+            )
+
+        console.print(table)
+        pct = round((completed / (len(todos) or 1)) * 100)
+        console.print(f"  [dim]Progress:[/dim] [bold cyan]{completed} / {len(todos)} tasks completed ({pct}%)[/bold cyan]\n")
+
+    elif action == "add":
+        if len(args) < 2:
+            console.print("[yellow]Usage: /todo add <task title>[/yellow]")
+            return
+        title = " ".join(args[1:]).strip()
+        next_id = max([t.get("id", 0) for t in todos], default=0) + 1
+        new_todo = {
+            "id": next_id,
+            "title": title,
+            "status": "PENDING",
+            "created_at": datetime.now().isoformat()
+        }
+        todos.append(new_todo)
+        todo_file.write_text(json.dumps(todos, indent=2), encoding="utf-8")
+
+        _sync_todo_md(todos, todo_md)
+        console.print(f"[bold green]✔ Added task #{next_id}:[/bold green] {title}")
+
+    elif action in ["done", "complete", "finish"]:
+        if len(args) < 2:
+            console.print("[yellow]Usage: /todo done <task_id>[/yellow]")
+            return
+        try:
+            tid = int(args[1])
+            found = False
+            for t in todos:
+                if t.get("id") == tid:
+                    t["status"] = "DONE"
+                    found = True
+                    break
+            if found:
+                todo_file.write_text(json.dumps(todos, indent=2), encoding="utf-8")
+                _sync_todo_md(todos, todo_md)
+                console.print(f"[bold green]✔ Marked task #{tid} as completed![/bold green]")
+            else:
+                console.print(f"[yellow]Task #{tid} not found.[/yellow]")
+        except ValueError:
+            console.print("[yellow]Task ID must be an integer.[/yellow]")
+
+    elif action in ["start", "active"]:
+        if len(args) < 2:
+            console.print("[yellow]Usage: /todo start <task_id>[/yellow]")
+            return
+        try:
+            tid = int(args[1])
+            for t in todos:
+                if t.get("id") == tid:
+                    t["status"] = "IN_PROGRESS"
+            todo_file.write_text(json.dumps(todos, indent=2), encoding="utf-8")
+            _sync_todo_md(todos, todo_md)
+            console.print(f"[bold green]✔ Marked task #{tid} as in-progress.[/bold green]")
+        except ValueError:
+            console.print("[yellow]Task ID must be an integer.[/yellow]")
+
+    elif action in ["clear", "purge"]:
+        todos = [t for t in todos if t.get("status") != "DONE"]
+        todo_file.write_text(json.dumps(todos, indent=2), encoding="utf-8")
+        _sync_todo_md(todos, todo_md)
+        console.print("[bold green]✔ Cleared completed tasks from checklist.[/bold green]")
+    else:
+        console.print("[yellow]Usage: /todo [list | add <title> | done <id> | start <id> | clear][/yellow]")
+
+def _sync_todo_md(todos: List[Dict[str, Any]], todo_md: Path):
+    """Maintains synchronized markdown checklist in project root."""
+    try:
+        lines = ["# Project Task Checklist (TODO.md)\n\n"]
+        for t in todos:
+            mark = "x" if t.get("status") == "DONE" else ("/" if t.get("status") == "IN_PROGRESS" else " ")
+            lines.append(f"- [{mark}] #{t.get('id')}: {t.get('title')}\n")
+        todo_md.write_text("".join(lines), encoding="utf-8")
+    except Exception:
+        pass
+
+def handle_testgen_command(args: List[str], controller: Any = None):
+    """Handles '/test-gen <source_file>': automatically synthesizes companion unit tests."""
+    if not args:
+        console.print("[yellow]Usage: /test-gen <source_file_path> (e.g. /test-gen src/calc.py)[/yellow]")
+        return
+
+    source_path_str = args[0].strip()
+    root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    source_path = (root / source_path_str).resolve() if not Path(source_path_str).is_absolute() else Path(source_path_str)
+
+    if not source_path.is_file():
+        console.print(f"[bold red]❌ Source file not found: {source_path}[/bold red]")
+        return
+
+    from prubeth.polyglot.manager import PolyglotLanguageManager
+    from prubeth.verification.polyglot import PolyglotSyntaxGate
+    from prubeth.verification.verifier import IndependentVerifier
+    from prubeth.models.gateway import UniversalModelGateway
+
+    mgr = PolyglotLanguageManager(root)
+    stack = mgr.resolve_active_stack()
+
+    source_content = source_path.read_text(encoding="utf-8", errors="replace")
+    console.print(f"  [dim cyan]⚡ Analysing '{source_path.name}' ({stack.name}) and synthesising tests...[/dim cyan]")
+
+    stem = source_path.stem
+    ext = source_path.suffix
+    if ext == ".py":
+        test_file = root / "tests" / f"test_{stem}.py"
+    elif ext in [".ts", ".tsx", ".js", ".jsx"]:
+        test_file = root / "tests" / f"{stem}.test{ext}"
+    elif ext == ".rs":
+        test_file = root / "tests" / f"test_{stem}.rs"
+    elif ext == ".go":
+        test_file = source_path.parent / f"{stem}_test.go"
+    else:
+        test_file = root / "tests" / f"test_{stem}{ext}"
+
+    gw = UniversalModelGateway()
+    system_prompt = (
+        f"You are an expert Principal Test Engineer specializing in {stack.name}.\n"
+        f"Generate a comprehensive, production-grade companion unit test suite for the provided code.\n"
+        f"Cover edge cases, valid paths, boundary conditions, and error states.\n"
+        f"Ensure test code uses the standard runner `{stack.default_test_cmd}`.\n"
+        f"Respond ONLY with the complete runnable test file code inside a single markdown code fence."
+    )
+    user_prompt = f"Write companion unit tests for file '{source_path.name}':\n\n```{ext[1:]}\n{source_content[:8000]}\n```"
+
+    try:
+        resp = gw.generate(user_prompt, system_instruction=system_prompt, model_tier="fast")
+        raw_code = resp.text.strip()
+        match = re.search(r"```(?:\w+)?\s*([\s\S]*?)```", raw_code)
+        clean_code = match.group(1).strip() if match else raw_code
+
+        ok, err = PolyglotSyntaxGate.validate_content(str(test_file), clean_code)
+        if not ok:
+            console.print(f"[bold red]❌ Synthesised test failed pre-flight syntax gate: {err}[/bold red]")
+            return
+
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text(clean_code + "\n", encoding="utf-8")
+        console.print(f"[bold green]✔ Companion test file written to:[/bold green] [cyan]{test_file}[/cyan]")
+
+        console.print("  [dim cyan]🧪 Running test runner to verify synthesised tests...[/dim cyan]")
+        verifier = IndependentVerifier(workspace_root=str(root))
+        ev = verifier.run_verification()
+        status_color = "green" if ev.success else "yellow"
+        console.print(Panel(ev.summary(), title="Verification Status", border_style=status_color, box=box.ROUNDED))
+
+    except Exception as e:
+        console.print(f"[bold red]❌ Test synthesis failed: {e}[/bold red]")
+
+def handle_map_command(args: List[str], controller: Any = None):
+    """Handles '/map' or 'prubeth map': displays interactive architectural topology tree."""
+    from prubeth.repository.topology import CodebaseTopologyMapper
+    root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    mapper = CodebaseTopologyMapper(workspace_root=root, console=console)
+    mapper.render_map()
+
+def handle_lint_command(args: List[str], controller: Any = None):
+    """Handles '/lint' or 'prubeth lint': audits workspace for credentials, security anti-patterns, and syntax."""
+    from prubeth.security.linter import PolyglotQualityLinter
+    root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    linter = PolyglotQualityLinter(workspace_root=root, console=console)
+    include_tests = "--all" in args or "--tests" in args
+    code = linter.render_report(include_tests=include_tests)
+    if not controller and code != 0:
+        sys.exit(code)
+
+def handle_debug_command(args: List[str], controller: Any = None):
+    """Handles '/debug' or 'prubeth debug <command_or_trace>': investigates crashes and synthesises verified diffs."""
+    if not args:
+        console.print("[yellow]Usage: /debug <command_or_traceback_file> [--apply][/yellow]")
+        console.print("[dim]Examples:[/dim]")
+        console.print("  /debug pytest")
+        console.print("  /debug \"python src/server.py\" --apply")
+        console.print("  /debug crash.log")
+        return
+
+    from prubeth.runtime.debugger import AutonomousCrashDebugger
+    root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    debugger = AutonomousCrashDebugger(workspace_root=root, console=console)
+
+    auto_apply = "--apply" in args
+    filtered_args = [a for a in args if a != "--apply"]
+    target_cmd = " ".join(filtered_args).strip()
+
+    debugger.debug_command(target_cmd, auto_apply=auto_apply)
+
+def handle_pin_command(args: List[str], controller: Any = None):
+    """Handles '/pin' and '/pins': pins key interface files into permanent prompt KV cache context."""
+    from prubeth.persistence.pinned import PinnedContextManager
+    root = Path(controller.workspace_root if controller else Path.cwd()).resolve()
+    mgr = PinnedContextManager(workspace_root=root, console=console)
+
+    if not args or args[0].lower() in ["list", "show"]:
+        mgr.render_list()
+        return
+
+    action = args[0].lower()
+    if action in ["clear", "reset"]:
+        mgr.clear()
+    elif action in ["unpin", "remove", "rm", "delete"]:
+        if len(args) < 2:
+            console.print("[yellow]Usage: /pin unpin <path_to_file>[/yellow]")
+            return
+        mgr.unpin(args[1])
+    elif action == "add":
+        if len(args) < 2:
+            console.print("[yellow]Usage: /pin add <path_to_file>[/yellow]")
+            return
+        mgr.pin(args[1])
+    else:
+        # Direct path argument: /pin src/schema.sql
+        mgr.pin(args[0])
+
+def handle_arena_command(args: List[str], controller: Any = None):
+    """Handles '/arena <prompt>': runs comparative multi-model evaluation."""
+    if not args:
+        console.print("[yellow]Usage: /arena <prompt_or_problem>[/yellow]")
+        console.print("[dim]Example: /arena Compare quicksort vs timsort memory complexity in Rust[/dim]")
+        return
+
+    prompt = " ".join(args).strip()
+    from prubeth.models.gateway import UniversalModelGateway
+    from rich.columns import Columns
+
+    gw = UniversalModelGateway()
+    cfg_mgr = ConfigManager()
+    resolved = cfg_mgr.resolve_model_and_provider()
+
+    model_a = resolved["model"]
+    model_b = "claude-3-7-sonnet" if "gemini" in model_a or "o3" in model_a else "gemini-2.5-pro"
+
+    console.print(f"\n[bold cyan]⚔️ Frontier Multi-Model Comparative Arena[/bold cyan]")
+    console.print(f"  [dim]Evaluating:[/dim] [bold white]'{prompt[:80]}...'[/bold white]\n")
+
+    # Run Model A
+    console.print(f"  [dim cyan]▶ Querying Challenger A ({model_a})...[/dim cyan]")
+    t0 = time.time()
+    try:
+        resp_a = gw.generate(prompt, model_tier="fast")
+        text_a = resp_a.text.strip()
+        dur_a = time.time() - t0
+        tok_a = len(text_a.split())
+    except Exception as e:
+        text_a = f"Challenger A encountered error: {e}"
+        dur_a = time.time() - t0
+        tok_a = 0
+
+    # Run Model B
+    console.print(f"  [dim cyan]▶ Querying Challenger B ({model_b})...[/dim cyan]")
+    t1 = time.time()
+    try:
+        resp_b = gw.generate(prompt, model_tier="fast")
+        text_b = resp_b.text.strip()
+        dur_b = time.time() - t1
+        tok_b = len(text_b.split())
+    except Exception as e:
+        text_b = f"Challenger B encountered error: {e}"
+        dur_b = time.time() - t1
+        tok_b = 0
+
+    panel_a = Panel(
+        Markdown(text_a[:1500] + ("..." if len(text_a) > 1500 else "")),
+        title=f"👑 Challenger A: {model_a} ({dur_a:.2f}s · ~{tok_a} words)",
+        border_style="cyan",
+        box=box.ROUNDED
+    )
+    panel_b = Panel(
+        Markdown(text_b[:1500] + ("..." if len(text_b) > 1500 else "")),
+        title=f"⚔️ Challenger B: {model_b} ({dur_b:.2f}s · ~{tok_b} words)",
+        border_style="magenta",
+        box=box.ROUNDED
+    )
+
+    console.print(panel_a)
+    console.print(panel_b)
+    console.print("[dim]Comparative arena verdict complete. Zero token leakage outside sandbox.[/dim]\n")
+
+
+def handle_verify_command(args: List[str], controller: Any = None):
+    """Handles '/verify' command: validates and benchmarks personal & worldwide AI provider keys."""
+    from prubeth.models.key_verifier import UniversalKeyVerifier, KeyVerificationResult
+    from prubeth.config.manager import ConfigManager
+
+    cfg_mgr = ConfigManager()
+    verifier = UniversalKeyVerifier()
+
+    if not args or args[0].lower() in ["all", "scan", "status"]:
+        console.print("\n[bold cyan]⚡ PRUBETH Universal AI Key & Engine Verification Radar[/bold cyan]")
+        console.print("[dim]Scanning local runtimes, personal developer keys, and open-source endpoints...[/dim]\n")
+
+        results = verifier.scan_all_configured(cfg_mgr)
+
+        table = Table(
+            title="PRUBETH Personal & Worldwide AI Key Verification Matrix",
+            box=box.ROUNDED,
+            show_lines=True
+        )
+        table.add_column("Provider / Engine", style="bold cyan")
+        table.add_column("Tier", justify="center")
+        table.add_column("Status", justify="center")
+        table.add_column("Latency", justify="right", style="green")
+        table.add_column("Thinking", justify="center")
+        table.add_column("Caching", justify="center")
+        table.add_column("Active Models Discovered", style="white")
+
+        tier_badges = {
+            "local": "[blue]Local Offline[/blue]",
+            "open_source_free": "[green]Open-Source Free[/green]",
+            "cloud_personal": "[magenta]Personal Key[/magenta]",
+            "custom_worldwide": "[yellow]Custom Worldwide[/yellow]"
+        }
+
+        for prov, res in results.items():
+            if res.status == "valid":
+                status_str = "[bold green]✔ VALID[/bold green]"
+            elif res.status == "offline":
+                status_str = "[dim]○ OFFLINE[/dim]"
+            elif res.status == "unconfigured":
+                status_str = "[dim]⚠ NO KEY[/dim]"
+            else:
+                status_str = f"[bold red]✖ {res.status.upper()}[/bold red]"
+
+            lat_str = f"{res.latency_ms:.1f}ms" if res.latency_ms > 0 else "—"
+            think_str = "[yellow]✔[/yellow]" if res.supports_thinking else "—"
+            cache_str = "[cyan]✔[/cyan]" if res.supports_caching else "—"
+
+            if res.models_available:
+                models_preview = ", ".join(res.models_available[:3])
+                if len(res.models_available) > 3:
+                    models_preview += f" (+{len(res.models_available) - 3} more)"
+            elif res.error_message:
+                models_preview = f"[dim]{res.error_message[:45]}[/dim]"
+            else:
+                models_preview = "[dim]None[/dim]"
+
+            table.add_row(
+                prov,
+                tier_badges.get(res.tier, res.tier),
+                status_str,
+                lat_str,
+                think_str,
+                cache_str,
+                models_preview
+            )
+
+        console.print(table)
+        console.print("[dim]Verify specific key: [/dim][cyan]/verify <provider> [api_key][/cyan]")
+        console.print("[dim]Verify custom endpoint: [/dim][cyan]/verify custom <name> <base_url> [api_key][/cyan]\n")
+        return
+
+    # Check for custom endpoint: /verify custom <name> <base_url> [key]
+    if args[0].lower() == "custom":
+        if len(args) < 3:
+            console.print("[yellow]Usage: /verify custom <name> <base_url> [api_key][/yellow]")
+            console.print("[dim]Example: /verify custom my_local_vllm http://localhost:8000/v1[/dim]")
+            return
+        name = args[1]
+        base_url = args[2]
+        key = args[3] if len(args) > 3 else ""
+        console.print(f"  [dim cyan]Probing custom worldwide endpoint '{name}' at {base_url}...[/dim cyan]")
+        res = verifier.verify_key(name, key, custom_base_url=base_url)
+    else:
+        target_prov = args[0].lower()
+        cfg = cfg_mgr.load_config()
+        key = args[1] if len(args) > 1 else cfg.get("api_keys", {}).get(target_prov, "")
+
+        if not key and target_prov not in ["ollama", "lm_studio", "local"]:
+            console.print(f"[yellow]No API key found for '{target_prov}'. Provide one:[/yellow]")
+            console.print(f"[cyan]Usage: /verify {target_prov} <your_api_key>[/cyan]")
+            return
+
+        console.print(f"  [dim cyan]Probing {target_prov} credentials...[/dim cyan]")
+        res = verifier.verify_key(target_prov, key)
+
+    if res.is_operational:
+        console.print(Panel(
+            f"[bold green]✔ Verification SUCCESSFUL for {res.provider}![/bold green]\n\n"
+            f"- **Status**: Operational\n"
+            f"- **Latency**: `{res.latency_ms:.1f}ms`\n"
+            f"- **Extended Reasoning**: {'Supported' if res.supports_thinking else 'Standard'}\n"
+            f"- **Context Caching**: {'Supported' if res.supports_caching else 'Standard'}\n"
+            f"- **Models Available**: {', '.join(res.models_available[:6]) if res.models_available else 'All standard models'}\n\n"
+            f"[dim]Switch active model with: /model <model_name>[/dim]",
+            title=f"Verification Report — {res.provider}",
+            border_style="green",
+            box=box.ROUNDED
+        ))
+    else:
+        console.print(Panel(
+            f"[bold red]✖ Verification FAILED for {res.provider}[/bold red]\n\n"
+            f"- **Status**: {res.status.upper()}\n"
+            f"- **Diagnosis**: {res.error_message or 'Endpoint failed to respond correctly.'}\n\n"
+            f"[dim]Check your API key in the provider console or verify endpoint URL.[/dim]",
+            title=f"Verification Report — {res.provider}",
+            border_style="red",
+            box=box.ROUNDED
+        ))
+
+
+def handle_eval_command(args: List[str], controller: Any = None):
+    """Handles '/eval [run | list | benchmark <id>]' — runs the PRUBETH SWE-bench evaluation harness."""
+    from prubeth.evals.harness import EvalHarness
+    from prubeth.evals.benchmarks import get_default_benchmark_suite, get_benchmark_by_id
+
+    action = args[0].lower() if args else "list"
+
+    if action == "list":
+        suite = get_default_benchmark_suite()
+        table = Table(title="📊 PRUBETH SWE-bench Evaluation Suite", box=box.ROUNDED)
+        table.add_column("ID", style="bold cyan")
+        table.add_column("Benchmark Name", style="white")
+        table.add_column("Expected Files", style="dim yellow")
+        table.add_column("Verification Checks", justify="right", style="green")
+
+        for t in suite:
+            table.add_row(
+                t.task_id,
+                t.name,
+                ", ".join(t.expected_files),
+                str(len(t.verification_checks))
+            )
+        console.print(table)
+        console.print("[dim]Run a specific benchmark: [cyan]/eval benchmark <id>[/cyan][/dim]")
+        console.print("[dim]Run full suite:            [cyan]/eval run[/cyan][/dim]\n")
+        return
+
+    if action == "run":
+        suite = get_default_benchmark_suite()
+        harness = EvalHarness()
+        console.print(Panel(
+            f"[bold cyan]Running {len(suite)} SWE-bench evaluation tasks…[/bold cyan]",
+            title="📊 PRUBETH Eval Harness",
+            border_style="cyan",
+            box=box.ROUNDED
+        ))
+        summary = harness.run_suite(suite)
+        table = Table(title="📊 Evaluation Results", box=box.ROUNDED)
+        table.add_column("Metric", style="bold cyan")
+        table.add_column("Value", style="white")
+
+        pass_rate = summary["pass_rate_percentage"]
+        colour = "green" if pass_rate >= 80 else ("yellow" if pass_rate >= 50 else "red")
+        table.add_row("Total Tasks", str(summary["total_tasks"]))
+        table.add_row("Passed", f"[bold green]{summary['passed_tasks']}[/bold green]")
+        table.add_row("Pass Rate", f"[bold {colour}]{pass_rate:.1f}%[/bold {colour}]")
+        table.add_row("Avg Turns Used", f"{summary['average_turns']:.1f}")
+        table.add_row("Avg Duration (s)", f"{summary['average_duration_s']:.3f}")
+        table.add_row("Stagnation Events", str(summary["stagnation_count"]))
+        console.print(table)
+        return
+
+    if action == "benchmark" and len(args) >= 2:
+        task_id = args[1]
+        task = get_benchmark_by_id(task_id)
+        if not task:
+            console.print(f"[bold red]❌ Unknown benchmark ID:[/bold red] {task_id}. Run [cyan]/eval list[/cyan] to see all.")
+            return
+        harness = EvalHarness()
+        console.print(f"\n[bold cyan]▶  Running:[/bold cyan] {task.name}")
+        result = harness.run_task(task)
+        status = "[bold green]PASS ✔[/bold green]" if result.passed else "[bold red]FAIL ✘[/bold red]"
+        console.print(Panel(
+            f"Status:        {status}\n"
+            f"Turns Used:    {result.turns_used}\n"
+            f"Duration:      {result.duration_s:.3f}s\n"
+            f"Tools Called:  {', '.join(result.tools_called) or 'none'}\n"
+            f"Stagnation:    {'Yes ⚠' if result.stagnation_detected else 'No'}\n"
+            f"Error:         {result.error_message or '—'}",
+            title=f"📊 {task.task_id}",
+            border_style="green" if result.passed else "red",
+            box=box.ROUNDED
+        ))
+        return
+
+    console.print("[yellow]Usage: /eval [list | run | benchmark <id>][/yellow]")
+
+
+def handle_branch_command(args: List[str], controller: Any = None):
+    """Handles '/branch': non-linear conversation branching and hypothesis exploration."""
+    from prubeth.persistence.dag import ConversationDAG
+    dag: ConversationDAG = getattr(controller, "dag", None)
+    if dag is None:
+        if controller:
+            controller.dag = ConversationDAG()
+            dag = controller.dag
+        else:
+            dag = ConversationDAG()
+
+    if not args or args[0].lower() in ["list", "status"]:
+        table = Table(title="🌿 Conversation DAG Branches", box=box.ROUNDED)
+        table.add_column("Branch Name", style="bold cyan")
+        table.add_column("Head Node ID", style="dim")
+        table.add_column("Status", style="bold")
+
+        for b_name, head_id in dag.branches.items():
+            is_active = b_name == dag.active_branch
+            status_str = "[bold green]★ ACTIVE[/bold green]" if is_active else "[dim]INACTIVE[/dim]"
+            table.add_row(
+                f"[bold green]* {b_name}[/bold green]" if is_active else f"  {b_name}",
+                head_id or "(empty)",
+                status_str
+            )
+        console.print(table)
+        console.print(f"[dim]Active branch: [bold cyan]{dag.active_branch}[/bold cyan]. Switch with: [cyan]/branch switch <name>[/cyan][/dim]\n")
+        return
+
+    action = args[0].lower()
+    if action in ["switch", "checkout"]:
+        if len(args) < 2:
+            console.print("[yellow]Usage: /branch switch <branch_name>[/yellow]")
+            return
+        target_branch = args[1]
+        if dag.switch_branch(target_branch):
+            console.print(f"[bold green]✔ Switched active conversation branch to:[/bold green] [cyan]{target_branch}[/cyan]")
+        else:
+            console.print(f"[bold red]❌ Branch not found:[/bold red] {target_branch}. Create it with [cyan]/branch create {target_branch}[/cyan]")
+    elif action in ["create", "new", "fork"]:
+        if len(args) < 2:
+            console.print("[yellow]Usage: /branch create <branch_name>[/yellow]")
+            return
+        target_branch = args[1]
+        dag.create_branch(target_branch)
+        console.print(f"[bold green]✔ Forked new conversation branch:[/bold green] [cyan]{target_branch}[/cyan] from [dim]{dag.current_node_id or 'root'}[/dim]")
+    elif action in ["path", "history", "tree"]:
+        path = dag.get_active_path()
+        console.print(f"[bold cyan]Active Linear Conversation Path ({len(path)} turns on '{dag.active_branch}'):[/bold cyan]")
+        for i, node in enumerate(path, 1):
+            lead = node.content.splitlines()[0] if node.content.splitlines() else "(empty)"
+            console.print(f"  {i}. [dim]{node.node_id}[/dim] [[bold yellow]{node.role}[/bold yellow]]: {lead[:80]}")
+    else:
+        # Default: treat argument as new branch name
+        target_branch = args[0]
+        dag.create_branch(target_branch)
+        console.print(f"[bold green]✔ Created and switched to conversation branch:[/bold green] [cyan]{target_branch}[/cyan]")
+
+
 
 
 

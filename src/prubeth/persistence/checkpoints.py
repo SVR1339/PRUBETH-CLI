@@ -12,39 +12,78 @@ class SnapshotManager:
     """
 
     def __init__(self, workspace_root: Optional[Path] = None, task_id: str = "default"):
-        self.workspace_root = (workspace_root or Path.cwd()).resolve()
+        raw_root = (workspace_root or Path.cwd()).resolve()
+        
+        # Guard against running directly in Windows OS System directories (e.g. C:\Windows\System32)
+        if os.name == "nt":
+            win_root = os.environ.get("SystemRoot", "C:\\Windows").lower()
+            if str(raw_root).lower().startswith(win_root):
+                safe_dir = Path.home() / "prubeth-workspace"
+                safe_dir.mkdir(parents=True, exist_ok=True)
+                raw_root = safe_dir
+
+        self.workspace_root = raw_root
         self.task_id = task_id
-        self.snapshots_dir = self.workspace_root / ".prubeth" / "snapshots" / self.task_id
-        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.snapshots_dir = self.workspace_root / ".prubeth" / "snapshots" / self.task_id
+            self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            self.snapshots_dir = Path.home() / ".prubeth" / "snapshots" / self.task_id
+            self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+
         self.ignored_dirs = {
             ".git", ".prubeth", "__pycache__", "node_modules", ".venv", "venv",
-            ".pytest_cache", "dist", "build", "prubeth.egg-info", ".mypy_cache"
+            ".pytest_cache", "dist", "build", "prubeth.egg-info", ".mypy_cache",
+            "system32", "syswow64", "winsxs", "servicing", "drivers"
+        }
+        self.ignored_extensions = {
+            ".dll", ".sys", ".exe", ".ocx", ".drv", ".mui", ".pdb", ".bin", ".dat"
         }
 
     def create_snapshot(self, label: str) -> str:
         """Captures a shadow copy of all relevant workspace files."""
         snapshot_path = self.snapshots_dir / label
         if snapshot_path.exists():
-            shutil.rmtree(snapshot_path)
-        snapshot_path.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.rmtree(snapshot_path, ignore_errors=True)
+            except Exception:
+                pass
+        try:
+            snapshot_path.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            return f"Snapshot '{label}' skipped (write permission restricted)."
 
         copied_count = 0
         manifest = []
-        for root, dirs, files in os.walk(self.workspace_root):
-            dirs[:] = [d for d in dirs if d not in self.ignored_dirs]
-            for file in files:
-                src_file = Path(root) / file
-                rel_path = src_file.relative_to(self.workspace_root)
-                dst_file = snapshot_path / rel_path
-                dst_file.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_file, dst_file)
-                manifest.append(str(rel_path).replace("\\", "/"))
-                copied_count += 1
+        try:
+            for root, dirs, files in os.walk(self.workspace_root):
+                dirs[:] = [d for d in dirs if d.lower() not in self.ignored_dirs]
+                for file in files:
+                    src_file = Path(root) / file
+                    if src_file.suffix.lower() in self.ignored_extensions:
+                        continue
+                    try:
+                        # Skip oversized binary files (> 10MB)
+                        if src_file.stat().st_size > 10 * 1024 * 1024:
+                            continue
+                        rel_path = src_file.relative_to(self.workspace_root)
+                        dst_file = snapshot_path / rel_path
+                        dst_file.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src_file, dst_file)
+                        manifest.append(str(rel_path).replace("\\", "/"))
+                        copied_count += 1
+                    except (PermissionError, OSError, ValueError):
+                        continue
+        except (PermissionError, OSError):
+            pass
 
         # Write manifest of files in snapshot
-        with open(snapshot_path / ".manifest.json", "w", encoding="utf-8") as f:
-            import json
-            json.dump({"timestamp": datetime.now().isoformat(), "files": manifest}, f, indent=2)
+        try:
+            with open(snapshot_path / ".manifest.json", "w", encoding="utf-8") as f:
+                import json
+                json.dump({"timestamp": datetime.now().isoformat(), "files": manifest}, f, indent=2)
+        except Exception:
+            pass
 
         return f"Snapshot '{label}' created ({copied_count} files preserved)."
 
@@ -154,3 +193,27 @@ class SnapshotManager:
                         diff_chunks.append("\n".join(diff))
 
         return "\n\n".join(diff_chunks)
+
+    def delete_snapshot(self, label: str) -> bool:
+        """Deletes an individual snapshot by label."""
+        snapshot_path = self.snapshots_dir / label
+        if snapshot_path.exists() and snapshot_path.is_dir():
+            try:
+                shutil.rmtree(snapshot_path, ignore_errors=True)
+                return True
+            except Exception:
+                return False
+        return False
+
+    def clear_all_snapshots(self) -> int:
+        """Removes all snapshots for this task, returning the count of cleared snapshots."""
+        count = 0
+        if self.snapshots_dir.exists():
+            for item in list(self.snapshots_dir.iterdir()):
+                if item.is_dir():
+                    try:
+                        shutil.rmtree(item, ignore_errors=True)
+                        count += 1
+                    except Exception:
+                        pass
+        return count

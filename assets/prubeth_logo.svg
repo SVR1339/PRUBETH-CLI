@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 801 358" width="801" height="358">
+  <rect width="801" height="358" fill="#0d1117" />
+  <g transform="translate(39, 38)">
+    <!-- Row 0 -->
+    <rect x="0" y="0" width="20" height="20" fill="#ef2e31" />
+    <rect x="20" y="0" width="20" height="20" fill="#f06834" />
+    <rect x="40" y="0" width="20" height="20" fill="#f2a13b" />
+    <rect x="60" y="0" width="20" height="20" fill="#f6db43" />
+    <rect x="80" y="0" width="20" height="20" fill="#e0f948" />
+    <rect x="100" y="0" width="20" height="20" fill="#aef947" />
+    <rect x="120" y="0" width="20" height="20" fill="#80f947" />
+    <rect x="140" y="0" width="20" height="20" fill="#5ef947" />
+    <!-- Row 1 -->
+    <rect x="0" y="20" width="20" height="20" fill="#f06e35" />
+    <rect x="20" y="20" width="20" height="20" fill="#f3a83b" />
+    <rect x="40" y="20" width="20" height="20" fill="#f6e144" />
+    <rect x="60" y="20" width="20" height="20" fill="#daf948" />
+    <rect x="80" y="20" width="20" height="20" fill="#a8f947" />
+    <rect x="100" y="20" width="20" height="20" fill="#7cf947" />
+    <rect x="120" y="20" width="20" height="20" fill="#5df949" />
+    <rect x="140" y="20" width="20" height="20" fill="#5df975" />
+    <!-- Row 2 -->
+    <rect x="0" y="40" width="20" height="20" fill="#f3af3c" />
+    <rect x="20" y="40" width="20" height="20" fill="#f7e845" />
+    <rect x="160" y="40" width="20" height="20" fill="#61fae6" />
+    <rect x="180" y="40" width="20" height="20" fill="#57d5f8" />
+    <!-- Row 3 -->
+    <rect x="0" y="60" width="20" height="20" fill="#f7ef46" />
+    <rect x="20" y="60" width="20" height="20" fill="#cef948" />
+    <rect x="160" y="60" width="20" height="20" fill="#55cef8" />
+    <rect x="180" y="60" width="20" height="20" fill="#4795f6" />
+    <!-- Row 4 -->
+    <rect x="0" y="80" width="20" height="20" fill="#c8f948" />
+    <rect x="20" y="80" width="20" height="20" fill="#98f947" />
+    <rect x="160" y="80" width="20" height="20" fill="#458ef6" />
+    <rect x="180" y="80" width="20" height="20" fill="#3b55f6" />
+    <!-- Row 5 -->
+    <rect x="0" y="100" width="20" height="20" fill="#92f947" />
+    <rect x="20" y="100" width="20" height="20" fill="#6af947" />
+    <rect x="160" y="100" width="20" height="20" fill="#3a4ff5" />
+    <rect x="180" y="100" width="20" height="20" fill="#4d32f5" />
+    <!-- Row 6 -->
+    <rect x="0" y="120" width="20" height="20" fill="#66f947" />
+    <rect x="20" y="120" width="20" height="20" fill="#5df961" />
+    <rect x="40" y="120" width="20" height="20" fill="#5ef993" />
+    <rect x="60" y="120" width="20" height="20" fill="#60f9c9" />
+    <rect x="80" y="120" width="20" height="20" fill="#5ff3f9" />
+    <rect x="100" y="120" width="20" height="20" fill="#50baf7" />
+    <rect x="120" y="120" width="20" height="20" fill="#4281f6" />
+    <rect x="140" y="120" width="20" height="20" fill="#3a48f5" />
+    <!-- Row 7 -->
+    <rect x="0" y="140" width="20" height="20" fill="#5df967" />
+    <rect x="20" y="140" width="20" height="20" fill="#5ef999" />
+    <rect x="40" y="140" width="20" height="20" fill="#60f9cf" />
+    <rect x="60" y="140" width="20" height="20" fill="#5decf9" />
+    <rect x="80" y="140" width="20" height="20" fill="#4eb3f7" />
+    <rect x="100" y="140" width="20" height="20" fill="#417af6" />
+    <rect x="120" y="140" width="20" height="20" fill="#3942f5" />
+    <rect x="140" y="140" width="20" height="20" fill="#5932f5" />
+    <!-- Row 8 -->
+    <rect x="0" y="160" width="20" height="20" fill="#5ef99f" />
+    <rect x="20" y="160" width="20" height="20" fill="#60f9d6" />
+    <!-- Row 9 -->
+    <rect x="0" y="180" width="20" height="20" fill="#60f9dc" />
+    <rect x="20" y="180" width="20" height="20" fill="#5adff8" />
+    <!-- Row 10 -->
+    <rect x="0" y="200" width="20" height="20" fill="#58d8f8" />
+    <rect x="20" y="200" width="20" height="20" fill="#499ff7" />
+    <!-- Row 11 -->
+    <rect x="0" y="220" width="20" height="20" fill="#4798f7" />
+    <rect x="20" y="220" width="20" height="20" fill="#3d5ff6" />
+    <!-- Row 12 -->
+    <rect x="0" y="240" width="20" height="20" fill="#3c59f6" />
+    <rect x="20" y="240" width="20" height="20" fill="#4532f5" />
+    <!-- Row 13 -->
+    <rect x="0" y="260" width="20" height="20" fill="#4a32f5" />
+    <rect x="20" y="260" width="20" height="20" fill="#7d32f5" />
+  </g>
+  <!-- Typography -->
+  <text x="290" y="205" fill="#ffffff" font-family="'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Montserrat', sans-serif" font-size="64" font-weight="900" letter-spacing="4">PRUBETH AI</text>
+</svg>

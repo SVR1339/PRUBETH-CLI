@@ -1,7 +1,7 @@
-"""PRUBETH Enterprise Migration & Autonomous Ticket Resolver (Anthropic Claude Code Target).
+"""PRUBETH Autonomous Codebase Migration & Autonomous Issue Resolver.
 
-Resolves complex enterprise GitHub issues and executes multi-file migrations
-(e.g., framework upgrades, async refactoring, schema transitions) with zero human babysitting.
+Resolves complex code defects and executes multi-file migrations
+(e.g., framework upgrades, async refactoring, schema transitions) autonomously with test verification.
 """
 
 import json
@@ -14,8 +14,8 @@ from prubeth.runtime.verification import TestTimeVerifier
 from prubeth.runtime.auto_heal import AutoHealer
 from prubeth.persistence.checkpoints import SnapshotManager
 
-class EnterpriseTicketResolver:
-    """Subsystem 18: Zero-Babysitting GitHub Issue & Bug Resolver."""
+class AutonomousIssueResolver:
+    """Subsystem 18: Autonomous Bug & Defect Issue Resolver."""
 
     def __init__(self, controller: Any = None):
         self.controller = controller
@@ -35,13 +35,12 @@ class EnterpriseTicketResolver:
 
         # 2. Formulate prompt for fluid execution turn
         prompt = (
-            f"Autonomous Enterprise Issue Resolution:\n"
+            f"Autonomous Issue Resolution:\n"
             f"Issue Description: {issue_description}\n"
             f"Top Candidate Files: {candidate_files}\n"
             f"Please inspect the candidate files, diagnose the defect, apply exact edits, and verify tests."
         )
 
-        success = False
         summary = ""
 
         if self.controller:
@@ -77,8 +76,9 @@ class EnterpriseTicketResolver:
             "summary": summary[:250]
         }
 
-class EnterpriseMigrator:
-    """Subsystem 19: Monorepo-Scale Codebase Migration Supervisor."""
+
+class AutonomousCodebaseMigrator:
+    """Subsystem 19: Full Codebase Architecture Migration Supervisor."""
 
     def __init__(self, controller: Any = None):
         self.controller = controller
@@ -100,15 +100,14 @@ class EnterpriseMigrator:
         return affected_files[:20]
 
     def execute_migration(self, migration_objective: str, model_name: Optional[str] = None) -> Dict[str, Any]:
-        """Orchestrates staged monorepo migration file-by-file with zero downtime or broken interfaces."""
+        """Orchestrates staged migration file-by-file with zero broken interfaces."""
         base_snap = self.snap_mgr.create_snapshot("migration_start")
         affected = self.plan_migration(migration_objective)
 
         completed_files = []
         for f in affected:
-            # Refactor file to adhere to migration objective
             prompt = (
-                f"Enterprise Codebase Migration:\n"
+                f"Autonomous Codebase Migration:\n"
                 f"Objective: {migration_objective}\n"
                 f"Target File: {f}\n"
                 f"Apply modern patterns and update any callers or interfaces cleanly."
@@ -136,3 +135,8 @@ class EnterpriseMigrator:
             "transformed_files": completed_files or affected[:5],
             "snapshot_id": mig_snap
         }
+
+
+# Aliases for backwards compatibility with earlier imports
+EnterpriseTicketResolver = AutonomousIssueResolver
+EnterpriseMigrator = AutonomousCodebaseMigrator

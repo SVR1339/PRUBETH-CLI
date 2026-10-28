@@ -166,6 +166,7 @@ class TestFaultInjection(unittest.TestCase):
     def test_onboarding_and_factory_reset(self):
         """Setup & Onboarding: Factory reset and probe capabilities execute cleanly."""
         from prubeth.cli.setup import probe_local_ai_capabilities, render_onboarding_wizard, execute_factory_reset
+        from prubeth.config.manager import ConfigManager
         from rich.console import Console
         from io import StringIO
 
@@ -174,14 +175,18 @@ class TestFaultInjection(unittest.TestCase):
         info = probe_local_ai_capabilities()
         self.assertIn("ollama_installed", info)
 
-        # Test rendering onboarding wizard
-        render_onboarding_wizard(c)
+        temp_cfg_dir = self.workspace / ".prubeth"
+        temp_cfg_dir.mkdir(parents=True, exist_ok=True)
+        temp_cfg_mgr = ConfigManager(config_dir=temp_cfg_dir)
+
+        # Test rendering onboarding wizard with isolated config
+        render_onboarding_wizard(c, cfg_mgr=temp_cfg_mgr, interactive=False)
         self.assertIn("PRUBETH First-Time Setup", out.getvalue())
 
-        # Test factory reset execution
+        # Test factory reset execution with isolated config
         out_reset = StringIO()
         c_reset = Console(file=out_reset)
-        execute_factory_reset(c_reset)
+        execute_factory_reset(c_reset, cfg_mgr=temp_cfg_mgr)
         self.assertIn("Factory Default Reset", out_reset.getvalue())
 
 if __name__ == "__main__":

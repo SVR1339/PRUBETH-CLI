@@ -21,8 +21,8 @@ class TestCliDiagnosticsAndQualification(unittest.TestCase):
     def test_version_metadata_integrity(self):
         """Verifies version, license, and zero-telemetry metadata."""
         meta = get_version_metadata()
-        self.assertIn(meta["version"], ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1"])
-        self.assertIn("Enterprise Commercial Production", meta["release_tier"])
+        self.assertIn(meta["version"], ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1", "2.0.0"])
+        self.assertTrue("Pinnacle Production" in meta["release_tier"] or "Enterprise Commercial Production" in meta["release_tier"])
         self.assertEqual(meta["license"], "Apache-2.0")
         self.assertIn("Local-First", meta["zero_telemetry"])
         self.assertIn("33 MB", meta["memory_budget"])
@@ -31,7 +31,7 @@ class TestCliDiagnosticsAndQualification(unittest.TestCase):
         """Verifies version rendering in both ANSI table and JSON modes."""
         render_version_info(self.console, as_json=False)
         output = self.console.file.getvalue()
-        self.assertTrue(any(v in output for v in ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1"]))
+        self.assertTrue(any(v in output for v in ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1", "2.0.0"]))
         self.assertIn("Apache-2.0", output)
 
         # JSON mode
@@ -41,7 +41,7 @@ class TestCliDiagnosticsAndQualification(unittest.TestCase):
             sys.stdout = buf
             render_version_info(self.console, as_json=True)
             json_out = buf.getvalue()
-            self.assertTrue(any(f'"version": "{v}"' in json_out for v in ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1"]))
+            self.assertTrue(any(f'"version": "{v}"' in json_out for v in ["1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.3.0", "1.3.1", "2.0.0"]))
             self.assertIn('"zero_telemetry": "Verified (100% Local-First)"', json_out)
         finally:
             sys.stdout = stdout_orig

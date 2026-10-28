@@ -43,3 +43,11 @@ class SubagentResult:
     critic_approved: bool = False
     critic_notes: str = ""
     turns_used: int = 0
+
+    @property
+    def summary(self) -> str:
+        return self.output
+
+    @property
+    def files_modified(self) -> List[str]:
+        return self.modified_files

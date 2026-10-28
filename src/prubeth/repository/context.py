@@ -34,6 +34,15 @@ class ContextExpander:
         attachments: List[Dict[str, Any]] = []
         cleaned_prompt = text
 
+        # 0. Inject Pinned KV Cache Context attachments
+        try:
+            from prubeth.persistence.pinned import PinnedContextManager
+            pin_mgr = PinnedContextManager(self.workspace_root)
+            pinned_att = pin_mgr.get_context_attachments()
+            attachments.extend(pinned_att)
+        except Exception:
+            pass
+
         # 1. Match @diff
         if "@diff" in text or "@git:diff" in text:
             cleaned_prompt = cleaned_prompt.replace("@git:diff", "").replace("@diff", "").strip()

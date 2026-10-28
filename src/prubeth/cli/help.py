@@ -5,6 +5,14 @@ from rich.panel import Panel
 
 from prubeth.cli.version import PRUBETH_VERSION
 
+TIER1_HELP_TEXT = """PRUBETH Autonomous Developer CLI — Frontier Parity Edition
+Available Slash Commands & Operational Workflows
+Autonomous Task Directives
+Model Selection & Routing
+Security & Clearance Levels
+Core CLI Options & Operational Commands
+"""
+
 def render_tier1_help(console: Console):
     """Renders Google/Anthropic-standard comprehensive CLI documentation."""
     console.print(Panel(
@@ -88,6 +96,18 @@ def render_tier1_help(console: Console):
     cmds_table.add_row("", "bridge [status|ping]", "Inspect IDE IPC Named Pipe (Windows) / Unix socket bridge.")
     cmds_table.add_row("", "completion <shell>", "Generate native tab completions for powershell, bash, or zsh.")
     cmds_table.add_row("", "models", "List all supported cloud and local models with prompt caching metadata.")
+
+    # Productivity & Polyglot
+    cmds_table.add_row("Productivity & Polyglot", "language [list|set]", "Switch & inspect 13 supported programming language ecosystems.")
+    cmds_table.add_row("", "benchmark [run]", "Multi-file autonomous engineering benchmark evaluation suite.")
+    cmds_table.add_row("", "thinking [tokens]", "Configure dynamic reasoning token budget (Claude 3.7 & Gemini 2.5).")
+    cmds_table.add_row("", "todo [list|add|done]", "Interactive workspace objective checklist synchronised to TODO.md.")
+    cmds_table.add_row("", "test-gen <source>", "Autonomous companion unit test synthesizer with syntax gates.")
+    cmds_table.add_row("", "map", "Interactive codebase architectural topology tree & metrics.")
+    cmds_table.add_row("", "lint", "Polyglot security secret audit, anti-pattern scanner, and syntax gate.")
+    cmds_table.add_row("", "debug <cmd|trace>", "Autonomous crash debugger & post-mortem investigator with diff synthesizer.")
+    cmds_table.add_row("", "pin [path] / pins", "Permanent KV cache context pinning for 90% token discounts.")
+    cmds_table.add_row("", "arena <prompt>", "Frontier multi-model comparative arena (Gemini vs Claude vs OpenAI).")
 
     console.print(cmds_table)
     console.print("\n [bold cyan]Examples:[/bold cyan]")

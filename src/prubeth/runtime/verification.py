@@ -13,6 +13,7 @@ from prubeth.verification.polyglot import PolyglotSyntaxGate
 
 class TestTimeVerifier:
     """Pre-flight and post-flight verification gates ensuring contract preservation and test passage."""
+    __test__ = False
 
     def __init__(self, workspace_root: Optional[Path] = None):
         self.workspace_root = (workspace_root or Path.cwd()).resolve()

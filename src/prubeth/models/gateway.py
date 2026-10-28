@@ -207,6 +207,10 @@ class UniversalModelGateway:
 
         t0 = time.time()
         try:
+            from prubeth.models.circuit_breaker import GlobalCircuitRegistry, CircuitBreakerOpenError
+            breaker = GlobalCircuitRegistry.get_breaker(provider)
+            if not breaker.can_execute():
+                raise CircuitBreakerOpenError(f"Circuit breaker OPEN for provider '{provider}'")
             if provider == "google":
                 resp = self._generate_google(
                     model, messages, system_instruction, api_key, endpoint,
@@ -226,6 +230,7 @@ class UniversalModelGateway:
                 )
 
             resp.latency_s = round(time.time() - t0, 3)
+            breaker.record_success()
             from prubeth.models.telemetry import LLMOpsMonitor
             LLMOpsMonitor().record_call(
                 model=resp.model or model,
@@ -240,6 +245,11 @@ class UniversalModelGateway:
             return resp
 
         except Exception as primary_err:
+            try:
+                from prubeth.models.circuit_breaker import GlobalCircuitRegistry
+                GlobalCircuitRegistry.get_breaker(provider).record_failure(str(primary_err))
+            except Exception:
+                pass
             from prubeth.models.telemetry import LLMOpsMonitor
             LLMOpsMonitor().record_call(model, provider, time.time() - t0, success=False, error_message=str(primary_err))
 
@@ -286,39 +296,41 @@ class UniversalModelGateway:
             # Build Hierarchical Failover Cascade: STRICTLY ORDERED HIGHEST TO LOWEST MODEL
             failover_candidates = []
             
+            or_key = cfg.get("api_keys", {}).get("openrouter") or os.getenv("OPENROUTER_API_KEY", "")
+            or_endpoint = cfg.get("provider_endpoints", {}).get("openrouter", "https://openrouter.ai/api/v1")
+            gemini_key = cfg.get("api_keys", {}).get("google") or os.getenv("GEMINI_API_KEY", "")
+            gemini_endpoint = cfg.get("provider_endpoints", {}).get("google", "https://generativelanguage.googleapis.com/v1beta")
+
             if provider == "google":
-                # Primary was Google. Fallback to OpenRouter Highest-to-Lowest free tier
-                or_key = cfg.get("api_keys", {}).get("openrouter") or os.getenv("OPENROUTER_API_KEY", "")
+                # Primary was Google. Fallback to OpenRouter free models
                 if or_key:
-                    or_endpoint = cfg.get("provider_endpoints", {}).get("openrouter", "https://openrouter.ai/api/v1")
                     failover_candidates.extend([
-                        ("openrouter", "openrouter/free", or_key, or_endpoint),
-                        ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free", or_key, or_endpoint),
-                        ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free", or_key, or_endpoint),
-                        ("openrouter", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", or_key, or_endpoint),
+                        ("openrouter", "openrouter/auto", or_key, or_endpoint),
                         ("openrouter", "nvidia/nemotron-3.5-lightning:free", or_key, or_endpoint),
                         ("openrouter", "cohere/north-mini-code:free", or_key, or_endpoint),
-                        ("openrouter", "google/gemma-4-31b-it:free", or_key, or_endpoint),
                         ("openrouter", "google/gemma-4-26b-a4b-it:free", or_key, or_endpoint)
                     ])
-                # Google Ultra-fast Lite fallback
-                gemini_key = cfg.get("api_keys", {}).get("google") or os.getenv("GEMINI_API_KEY", "")
                 if gemini_key:
                     failover_candidates.append(("google", "gemini-3.1-flash-lite", gemini_key, endpoint))
-            else:
-                # Primary was OpenRouter or other. Fallback to Google Gemini Highest-to-Lowest cascade
-                gemini_key = cfg.get("api_keys", {}).get("google") or os.getenv("GEMINI_API_KEY", "")
-                if gemini_key:
-                    gemini_endpoint = cfg.get("provider_endpoints", {}).get("google", "https://generativelanguage.googleapis.com/v1beta")
+            elif provider == "openrouter":
+                # Primary was OpenRouter. If specific model failed, fallback to openrouter/auto and free models
+                if or_key and model != "openrouter/auto":
                     failover_candidates.extend([
-                        ("google", "gemini-4-argon", gemini_key, gemini_endpoint),
-                        ("google", "gemini-3.1-pro-preview", gemini_key, gemini_endpoint),
-                        ("google", "gemini-3.8-flash", gemini_key, gemini_endpoint),
-                        ("google", "gemini-pro-latest", gemini_key, gemini_endpoint),
-                        ("google", "gemini-3.5-flash", gemini_key, gemini_endpoint),
-                        ("google", "gemini-flash-latest", gemini_key, gemini_endpoint),
-                        ("google", "gemini-3.1-flash-lite", gemini_key, gemini_endpoint)
+                        ("openrouter", "openrouter/auto", or_key, or_endpoint),
+                        ("openrouter", "nvidia/nemotron-3.5-lightning:free", or_key, or_endpoint),
+                        ("openrouter", "cohere/north-mini-code:free", or_key, or_endpoint)
                     ])
+                if gemini_key:
+                    failover_candidates.extend([
+                        ("google", "gemini-2.5-flash", gemini_key, gemini_endpoint),
+                        ("google", "gemini-2.5-pro", gemini_key, gemini_endpoint)
+                    ])
+            else:
+                # Primary was another provider. Try OpenRouter then Google
+                if or_key:
+                    failover_candidates.append(("openrouter", "openrouter/auto", or_key, or_endpoint))
+                if gemini_key:
+                    failover_candidates.append(("google", "gemini-2.5-flash", gemini_key, gemini_endpoint))
 
             # Local downloaded model fallback (100% private, zero cost, air-gapped)
             if local_loaded:
@@ -332,6 +344,8 @@ class UniversalModelGateway:
                 ])
 
             for fb_provider, fb_model, fb_key, fb_endpoint in failover_candidates:
+                if not GlobalCircuitRegistry.get_breaker(fb_provider).can_execute():
+                    continue
                 try:
                     if fb_provider == "google":
                         resp = self._generate_google(fb_model, messages, system_instruction, fb_key, fb_endpoint, tools=tools, timeout=cloud_timeout)
@@ -367,14 +381,14 @@ class UniversalModelGateway:
 
         # Build strict Highest-to-Lowest Google frontier model hierarchy
         google_hierarchy = [
-            "gemini-2.5-pro",
+            "gemini-3.5-flash",
             "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-3.1-pro-preview",
+            "gemini-3.8-flash",
             "gemini-4.0-preview",
             "gemini-4-argon",
-            "gemini-3.1-pro-preview",
             "gemini-pro-latest",
-            "gemini-3.8-flash",
-            "gemini-3.5-flash",
             "gemini-2.0-flash",
             "gemini-flash-latest",
             "gemini-3.1-flash-lite"
@@ -428,18 +442,19 @@ class UniversalModelGateway:
                 from prubeth.tools.definitions import to_google_tools
                 payload["tools"] = to_google_tools()
 
-        # Google Gemini 2.5 / 2.0 Extended Thinking Budget Configuration
-        if thinking_budget > 0:
-            payload["generationConfig"] = {
-                "thinkingConfig": {
-                    "thinkingBudget": thinking_budget
-                }
-            }
-
-        data_bytes = json.dumps(payload).encode("utf-8")
-
         last_error = ""
         for target_m in models_to_try:
+            m_payload = dict(payload)
+            # Google Gemini Extended Thinking Budget Configuration (pro and reasoning models)
+            if thinking_budget > 0 and ("pro" in target_m or "reason" in target_m or "thinking" in target_m):
+                m_payload["generationConfig"] = {
+                    "thinkingConfig": {
+                        "thinkingBudget": thinking_budget
+                    }
+                }
+
+            data_bytes = json.dumps(m_payload).encode("utf-8")
+
             if stream_cb:
                 url = f"{endpoint}/models/{target_m}:streamGenerateContent?alt=sse&key={api_key}"
             else:
@@ -757,7 +772,8 @@ class UniversalModelGateway:
         is_reasoning_model = any(m in model.lower() for m in ["o1", "o3", "o3-mini"])
         payload: Dict[str, Any] = {
             "model": model,
-            "messages": formatted_messages
+            "messages": formatted_messages,
+            "max_tokens": 4096
         }
         if is_reasoning_model:
             if reasoning_effort:
@@ -779,12 +795,14 @@ class UniversalModelGateway:
         try:
             with urllib.request.urlopen(req, timeout=req_timeout) as resp:
                 if stream_cb:
+                    from prubeth.models.stream_repair import UTF8StreamAccumulator
+                    accumulator = UTF8StreamAccumulator()
                     accumulated = []
                     stream_cached = 0
                     stream_prompt = 0
                     stream_completion = 0
                     for raw_line in resp:
-                        line = raw_line.decode("utf-8", errors="ignore").strip()
+                        line = accumulator.feed(raw_line).strip()
                         if line.startswith("data:"):
                             chunk_str = line[5:].strip()
                             if chunk_str == "[DONE]":
@@ -863,7 +881,16 @@ class UniversalModelGateway:
                     model, messages, system_instruction, api_key, endpoint,
                     provider_name, tools=False, reasoning_effort=reasoning_effort, timeout=timeout, stream_cb=stream_cb
                 )
-            raise
+            err_body = ""
+            try:
+                err_body = e.read().decode("utf-8", errors="ignore")
+            except Exception:
+                pass
+            if e.code == 401:
+                raise RuntimeError(f"Authentication failed (HTTP 401) for {provider_name.upper()} ({model}). Please check your API key with `/personal`.")
+            elif e.code == 404:
+                raise RuntimeError(f"Model '{model}' was not found (HTTP 404) on {provider_name.upper()}: {err_body[:160]}")
+            raise RuntimeError(f"{provider_name.upper()} returned HTTP {e.code}: {err_body[:200]}")
         except urllib.error.URLError as e:
             if "localhost" in url:
                 raise RuntimeError(f"Local server connection failed at {url}. Make sure {provider_name.upper()} is running.")

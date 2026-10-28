@@ -8,6 +8,7 @@ from prubeth.security.permissions import SecurityEngine
 from prubeth.persistence.database import TaskDatabase
 from prubeth.verification.polyglot import PolyglotSyntaxGate
 from prubeth.tools.shell import PersistentSubshell
+from prubeth.tools.registry import get_default_registry
 
 class ToolExecutionEngine:
     """Subsystem 4: Tool Execution Engine with Permission Checks and Audit Trail."""
@@ -21,6 +22,12 @@ class ToolExecutionEngine:
 
     def execute_tool(self, tool_name: str, args: Dict[str, Any], approval_cb=None) -> Tuple[bool, str]:
         """Validates permissions, runs tool, logs execution to SQLite database."""
+        # Normalize and repair JSON args if needed
+        if isinstance(args, str):
+            from prubeth.models.stream_repair import JSONRepairEngine
+            args = JSONRepairEngine.parse_safely(args)
+        elif not isinstance(args, dict):
+            args = {}
         # 1. Security & Permission Check
         is_permitted, err = self.security.check_tool_permission(tool_name, args, approval_cb)
         if not is_permitted:
@@ -98,13 +105,21 @@ class ToolExecutionEngine:
                 else:
                     output = f"No references or callers found for symbol '{target_sym}' across repository."
                 success = True
-            elif tool_name.startswith("mcp_") and self.mcp_mgr:
+            elif get_default_registry().has(tool_name):
+                reg = get_default_registry()
+                res = reg.execute(tool_name, args, context=self.security)
+                success = res.success
+                output = res.output
+                exit_code = res.exit_code
+            elif tool_name.startswith("mcp_"):
                 parts = tool_name.split("_", 2)
-                if len(parts) >= 3:
+                if len(parts) < 3:
+                    return False, f"Malformed MCP tool name: {tool_name}"
+                if self.mcp_mgr:
                     s_name, t_name = parts[1], parts[2]
                     success, output = self.mcp_mgr.call_mcp_tool(s_name, t_name, args)
                 else:
-                    return False, f"Malformed MCP tool name: {tool_name}"
+                    return False, f"MCP Manager not initialized for tool: {tool_name}"
             else:
                 return False, f"Unknown tool: {tool_name}"
 
@@ -164,9 +179,8 @@ class ToolExecutionEngine:
                 if not approved:
                     return f"Cancelled: Developer rejected modification to {path}."
 
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(content)
+        from prubeth.tools.file_ops import atomic_write_file
+        atomic_write_file(p, content, encoding="utf-8")
         return f"Successfully wrote {len(content)} characters to {path}"
 
     def _edit_file(self, path: str, target: str = "", replacement: str = "", edits: Optional[List[Dict[str, Any]]] = None, approval_cb: Optional[Any] = None) -> str:
@@ -203,7 +217,7 @@ class ToolExecutionEngine:
                     return f"Error: Target text matches multiple times in {path} (near lines {occurrences[:5]}). Provide more surrounding lines for uniqueness."
                 new_content = content.replace(target, replacement, 1)
             else:
-                # Fuzzy fallback: Normalize CRLF vs LF and whitespace
+                # Tier 1 Fuzzy Fallback: Normalize CRLF vs LF
                 norm_target = target.replace("\r\n", "\n")
                 norm_content = content.replace("\r\n", "\n")
                 if norm_target in norm_content and norm_content.count(norm_target) == 1:
@@ -212,14 +226,63 @@ class ToolExecutionEngine:
                     if "\r\n" in content:
                         new_content = new_content.replace("\n", "\r\n")
                 else:
-                    # Contextual error diagnostic: find closest matching lines
-                    target_first_line = target.strip().splitlines()[0] if target.strip().splitlines() else target.strip()
-                    close_matches = []
-                    for idx, line in enumerate(content.splitlines(), 1):
-                        if target_first_line.strip() in line.strip() or (len(line.strip()) > 5 and line.strip() in target_first_line.strip()):
-                            close_matches.append(f"Line {idx}: {line[:80]}")
-                    diag = f"\nClosest candidates in {path}:\n" + "\n".join(close_matches[:3]) if close_matches else ""
-                    return f"Error: Target text not found in {path}. Indentation or whitespace may differ.{diag}"
+                    # Tier 2 Fuzzy Fallback: Line-by-line whitespace-trimmed matching
+                    content_lines = norm_content.splitlines()
+                    target_lines = norm_target.splitlines()
+                    n_target = len(target_lines)
+                    matched_start = -1
+                    match_count = 0
+
+                    if n_target > 0:
+                        trimmed_target = [tl.rstrip() for tl in target_lines]
+                        for i in range(len(content_lines) - n_target + 1):
+                            candidate_window = [content_lines[i + j].rstrip() for j in range(n_target)]
+                            if candidate_window == trimmed_target:
+                                matched_start = i
+                                match_count += 1
+
+                    if match_count == 1 and matched_start != -1:
+                        # Found unique line-by-line match with trimmed whitespace
+                        rep_lines = replacement.replace("\r\n", "\n").splitlines()
+                        new_lines = content_lines[:matched_start] + rep_lines + content_lines[matched_start + n_target:]
+                        newline_char = "\r\n" if "\r\n" in content else "\n"
+                        new_content = newline_char.join(new_lines)
+                        if content.endswith("\n") or content.endswith("\r\n"):
+                            new_content += newline_char
+                    else:
+                        # Tier 3 Fuzzy Fallback: Sliding window SequenceMatcher (Levenshtein similarity >= 0.88)
+                        best_ratio = 0.0
+                        best_start = -1
+                        if n_target > 0 and len(content_lines) >= n_target:
+                            target_joined = "\n".join(target_lines)
+                            for i in range(len(content_lines) - n_target + 1):
+                                candidate_joined = "\n".join(content_lines[i:i + n_target])
+                                ratio = difflib.SequenceMatcher(None, candidate_joined, target_joined).ratio()
+                                if ratio > best_ratio:
+                                    best_ratio = ratio
+                                    best_start = i
+
+                        if best_ratio >= 0.88 and best_start != -1:
+                            rep_lines = replacement.replace("\r\n", "\n").splitlines()
+                            new_lines = content_lines[:best_start] + rep_lines + content_lines[best_start + n_target:]
+                            newline_char = "\r\n" if "\r\n" in content else "\n"
+                            new_content = newline_char.join(new_lines)
+                            if content.endswith("\n") or content.endswith("\r\n"):
+                                new_content += newline_char
+                        else:
+                            from prubeth.tools.file_ops import fuzzy_replace_text
+                            f_ok, f_res, f_msg = fuzzy_replace_text(content, target, replacement)
+                            if f_ok:
+                                new_content = f_res
+                            else:
+                                # Contextual error diagnostic: find closest matching lines
+                                target_first_line = target.strip().splitlines()[0] if target.strip().splitlines() else target.strip()
+                                close_matches = []
+                                for idx, line in enumerate(content.splitlines(), 1):
+                                    if target_first_line.strip() in line.strip() or (len(line.strip()) > 5 and line.strip() in target_first_line.strip()):
+                                        close_matches.append(f"Line {idx}: {line[:80]}")
+                                diag = f"\nClosest candidates in {path}:\n" + "\n".join(close_matches[:3]) if close_matches else ""
+                                return f"Error: Target text not found in {path}. Indentation or whitespace may differ.{diag}"
 
         from prubeth.runtime.verification import TestTimeVerifier
         verifier = TestTimeVerifier(Path(self.security.workspace_root))
@@ -240,8 +303,8 @@ class ToolExecutionEngine:
                 if not approved:
                     return f"Cancelled: Developer rejected modification to {path}."
 
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        from prubeth.tools.file_ops import atomic_write_file
+        atomic_write_file(p, new_content, encoding="utf-8")
         return f"Successfully modified {path}"
 
     def _run_command(self, cmd: str, timeout: int = 60) -> Tuple[int, str]:

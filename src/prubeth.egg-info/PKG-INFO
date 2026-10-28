@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: prubeth
-Version: 1.3.1
+Version: 2.0.0
 Summary: PRUBETH Autonomous Developer CLI — Elite Multi-Model Engineering Runtime (AI-DLC, ADLC, AGENTIC SDLC, SE 3.0)
 Author-email: PRUBETH Engineering Team <engineering@prubeth.ai>
 License: Apache-2.0
@@ -24,6 +24,7 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 License-File: NOTICE
 Requires-Dist: rich>=13.0.0
+Requires-Dist: prompt_toolkit>=3.0.0
 Dynamic: license-file
 
 # PRUBETH: Autonomous Developer Command-Line Interface (CLI)
@@ -121,36 +122,64 @@ PRUBETH is released under the **Apache 2.0 Open-Source License**:
 
 ---
 
-## 🚀 Installation & Quickstart
+## 🚀 One-Line Installation (Directly from GitHub)
 
-### 1. Install Globally on Your PC
-Ensure Python 3.10+ is installed, then run in PowerShell / Bash:
+Install PRUBETH CLI globally on any machine in a single command directly from GitHub — matching and surpassing Claude Code and Gemini CLI:
 
+### 🪟 Windows (PowerShell — Recommended)
+Run in PowerShell (installs standalone native binary, sets up PATH, and configures tab completion):
 ```powershell
-# Clone or navigate to the repository directory
-cd prubeth-autonomous-cli
-
-# Install in editable / development mode globally
-pip install -e .
+irm https://raw.githubusercontent.com/SVR1339/PRUBETH-CLI/main/install.ps1 | iex
 ```
 
-Verify global availability:
-```powershell
-prubeth --help
+### 🍎 macOS & 🐧 Linux (Bash / Zsh)
+Run in your terminal:
+```bash
+curl -fsSL https://raw.githubusercontent.com/SVR1339/PRUBETH-CLI/main/install.sh | bash
+```
+
+### ⚡ Astral uv (Ultra-Fast < 2s)
+```bash
+uv tool install git+https://github.com/SVR1339/PRUBETH-CLI.git
+```
+
+### 📦 pipx (Universal Python Isolated Environment)
+```bash
+pipx install git+https://github.com/SVR1339/PRUBETH-CLI.git
 ```
 
 ---
 
-### 2. Run Interactive Onboarding & Setup
-Launch the first-time onboarding wizard:
-```powershell
-prubeth setup
+## 🛠️ Post-Install Quickstart & Personal Setup
+
+### 1. Launch Personal Engine & Local Models Hub
+Configure your personal cloud API keys (Google Gemini, Anthropic Claude, OpenAI, OpenRouter) and auto-discover your downloaded local models (Ollama, LM Studio) on disk:
+```bash
+prubeth personal
 ```
 
-This wizard will:
-1. Inspect your system for local AI engines (Ollama, LM Studio).
-2. Display connection status and configured API keys.
-3. Provide one-click commands to download lightweight coding models from the internet.
+### 2. Verify Cryptographic Runtime Integrity
+Run the 5-pillar runtime attestation engine:
+```bash
+prubeth integrity
+```
+
+### 3. Run System Qualification Diagnostics
+```bash
+prubeth doctor
+```
+
+---
+
+### Alternative: Local Development / Editable Clone
+If contributing to PRUBETH or developing locally:
+```powershell
+# Clone or navigate to the repository directory
+cd prubeth-autonomous-cli
+
+# Install in editable mode
+pip install -e .
+```
 
 ---
 

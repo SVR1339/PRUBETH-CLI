@@ -1,11 +1,18 @@
 import unittest
+import tempfile
+import shutil
+from pathlib import Path
 from prubeth.config.manager import ConfigManager
 from prubeth.config.schema import SETTING_REGISTRY, validate_setting_value
 
 class TestSettingsSchema(unittest.TestCase):
 
     def setUp(self):
-        self.cfg_mgr = ConfigManager()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cfg_mgr = ConfigManager(config_dir=Path(self.tmpdir))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_all_registry_settings_have_metadata(self):
         for key, defn in SETTING_REGISTRY.items():

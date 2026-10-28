@@ -181,6 +181,9 @@ class WorktreeManager:
         if subagent_id in self.baselines:
             del self.baselines[subagent_id]
 
+    # Developer aliases
+    cleanup_worktree = destroy_worktree
+
     def cleanup_all_worktrees(self) -> int:
         """Tears down all active worktree scratchpads and clears baselines."""
         count = 0
@@ -192,6 +195,8 @@ class WorktreeManager:
                 count += 1
         self.baselines.clear()
         return count
+
+    cleanup_all = cleanup_all_worktrees
 
     def list_active_worktrees(self) -> List[Dict[str, Any]]:
         """Lists all active isolated worktree sandboxes."""

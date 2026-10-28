@@ -1,12 +1,19 @@
 import unittest
+import tempfile
+import shutil
+from pathlib import Path
 from prubeth.config.manager import ConfigManager
 from prubeth.performance.builder import PerformanceBuilder
 
 class TestPerformanceBuilder(unittest.TestCase):
 
     def setUp(self):
-        self.cfg_mgr = ConfigManager()
+        self.tmpdir = tempfile.mkdtemp()
+        self.cfg_mgr = ConfigManager(config_dir=Path(self.tmpdir))
         self.builder = PerformanceBuilder(self.cfg_mgr)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_probe_environment(self):
         env = self.builder.probe_environment()

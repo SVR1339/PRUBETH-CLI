@@ -185,7 +185,9 @@ class SubagentManager:
 
     def _get_role_system_prompt(self, role: SubagentRole) -> str:
         """Returns specialized system instructions for each worker role."""
-        if role == SubagentRole.CODER:
+        if role == SubagentRole.ARCHITECT:
+            return "You are a Principal Software Architect. Formulate high-level architecture specifications, decompose tasks, and define AST interface contracts."
+        elif role == SubagentRole.CODER:
             return "You are an Elite Implementation Engineer. Write clean, production-grade code adhering strictly to repository conventions and typing."
         elif role == SubagentRole.TEST_ENGINEER:
             return "You are a Principal Test Automation Architect. Write comprehensive unit and invariant tests covering edge cases and boundary conditions."
@@ -217,7 +219,10 @@ class SubagentManager:
         # Static heuristic audits
         lower_diff = diff.lower()
         if "api_key" in lower_diff and ("ai_za" in lower_diff or "sk-" in lower_diff):
-            return False, "Security Violation: Possible plaintext API secret detected in candidate diff."
+            # Allow mock, test, dummy, sample, or placeholder keys in test suites or fixtures
+            is_dummy = any(d in lower_diff for d in ["test", "dummy", "fake", "mock", "sample", "example", "placeholder"])
+            if not is_dummy:
+                return False, "Security Violation: Possible plaintext API secret detected in candidate diff."
 
         if "rm -rf /" in lower_diff or "os.system('del" in lower_diff:
             return False, "Security Violation: Destructive filesystem deletion command detected."

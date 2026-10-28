@@ -176,7 +176,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "default_provider": "google",
     "planner_model": None,  # Defaults to default_model if None
     "coder_model": None,    # Defaults to default_model if None
-    "cloud_timeout_s": 12,  # Latency timeout before auto-pivoting to local downloaded models
+    "cloud_timeout_s": 45,  # Latency timeout before auto-pivoting to local downloaded models (45s for reasoning models)
     "provider_endpoints": {
         "google": "https://generativelanguage.googleapis.com/v1beta",
         "openai": "https://api.openai.com/v1",
@@ -220,7 +220,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "max_execution_turns": 10,           # Max autonomous tool turns before forced verification
     "auto_approve_actions": True,        # Default True under Performance Builder profile
     "thinking_budget": 2048,             # Reasoning / thinking budget for Claude 3.7 & Gemini 2.5
-    "reasoning_effort": "medium"         # low | medium | high for OpenAI o1/o3-mini models
+    "reasoning_effort": "medium",        # low | medium | high for OpenAI o1/o3-mini models
+    "default_language": "auto"           # Preferred polyglot language stack (auto | python | rust | go | ts etc)
 }
 
 class ConfigManager:
@@ -404,8 +405,22 @@ class ConfigManager:
         model = MODEL_ALIASES.get(raw_model.lower().strip(), raw_model)
         
         m_lower = model.lower()
+        def_provider = cfg.get("default_provider", "google")
+        keys = cfg.get("api_keys", {})
+        has_openrouter_key = bool(keys.get("openrouter") or os.getenv("OPENROUTER_API_KEY"))
+
         if "/" in model or ":free" in m_lower:
             provider = "openrouter"
+        elif requested_model is None and def_provider == "openrouter" and has_openrouter_key:
+            provider = "openrouter"
+            if model in ["o3-mini", "o1", "o1-mini", "o1-preview", "gpt-4o", "gpt-4o-mini"]:
+                model = f"openai/{model}"
+            elif model in ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"]:
+                model = f"anthropic/{model}"
+            elif model in ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash-exp"]:
+                model = f"google/{model}"
+            elif "deepseek" in model and not model.startswith("deepseek/"):
+                model = f"deepseek/{model}"
         elif "gemini" in m_lower or "gemma" in m_lower:
             provider = "google"
         elif "claude" in m_lower:
@@ -419,7 +434,7 @@ class ConfigManager:
         elif "qwen" in m_lower or "llama" in m_lower or "mistral" in m_lower or "local" in m_lower:
             provider = "lm_studio"
         else:
-            provider = cfg.get("default_provider", "google")
+            provider = def_provider
 
         env_map = {
             "google": "GEMINI_API_KEY",

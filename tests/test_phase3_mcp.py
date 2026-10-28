@@ -71,10 +71,50 @@ class TestPhase3MCPAndEvaluation(unittest.TestCase):
         self.assertIn("github", self.mcp_mgr.servers)
 
         with patch("prubeth.cli.commands.console.print") as mock_print:
+            handle_mcp_command(["presets"], mock_controller)
+            self.assertTrue(mock_print.called)
+
+        with patch("prubeth.cli.commands.console.print") as mock_print:
+            handle_mcp_command(["install", "sqlite"], mock_controller)
+            self.assertTrue(mock_print.called)
+        self.assertIn("sqlite", self.mcp_mgr.servers)
+
+        with patch("prubeth.cli.commands.console.print") as mock_print:
             handle_mcp_command(["remove", "github"], mock_controller)
             self.assertTrue(mock_print.called)
 
         self.assertNotIn("github", self.mcp_mgr.servers)
+
+    def test_mcp_extra_tools_schema_converters(self):
+        from prubeth.tools.definitions import to_google_tools, to_anthropic_tools, to_openai_tools
+        extra = [
+            {
+                "name": "mcp_sqlite_query",
+                "description": "Run read-only SQL query",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "SQL statement"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
+        g_tools = to_google_tools(extra_tools=extra)
+        a_tools = to_anthropic_tools(extra_tools=extra)
+        o_tools = to_openai_tools(extra_tools=extra)
+
+        # Google declarations
+        g_names = [d["name"] for d in g_tools[0]["function_declarations"]]
+        self.assertIn("mcp_sqlite_query", g_names)
+
+        # Anthropic tools
+        a_names = [t["name"] for t in a_tools]
+        self.assertIn("mcp_sqlite_query", a_names)
+
+        # OpenAI tools
+        o_names = [t["function"]["name"] for t in o_tools]
+        self.assertIn("mcp_sqlite_query", o_names)
 
     def test_autonomous_benchmark_runner(self):
         runner = AutonomousBenchmarkRunner(controller=None)
