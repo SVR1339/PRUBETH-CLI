@@ -69,6 +69,18 @@
     } | Remove-Item -Force -ErrorAction SilentlyContinue
     Get-ChildItem -Path $env:TEMP -Filter "prubeth*.*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+    # Prune stale wrappers in WindowsApps and Python Scripts if present
+    $staleCmd = "$env:LOCALAPPDATA\Microsoft\WindowsApps\prubeth.cmd"
+    if (Test-Path $staleCmd) {
+        Remove-Item -Path $staleCmd -Force -ErrorAction SilentlyContinue
+        Write-Info "Pruned stale WindowsApps wrapper: $staleCmd"
+    }
+    $stalePythonExe = "C:\Python312\Scripts\prubeth.exe"
+    if (Test-Path $stalePythonExe) {
+        Remove-Item -Path $stalePythonExe -Force -ErrorAction SilentlyContinue
+        Write-Info "Pruned legacy python scripts executable: $stalePythonExe"
+    }
+
     $repoOwner = "SVR1339"
     $repoName = "PRUBETH-CLI"
     $binaryTarget = Join-Path $InstallDir "prubeth.exe"
@@ -172,34 +184,35 @@
         exit 1
     }
 
-    # 4. PATH Registration
+    # 4. PATH Registration (Prepend to ensure v2.0.0 takes precedence over any legacy wrappers)
     Write-Step "Configuring Environment PATH..."
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($userPath -notlike "*$InstallDir*") {
-        $newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $InstallDir } else { "$userPath;$InstallDir" }
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        Write-Success "Added $InstallDir permanently to User PATH."
-    } else {
-        Write-Info "$InstallDir is already in User PATH."
-    }
+    $cleanPath = ($userPath -split ';' | Where-Object { $_ -ne $InstallDir -and $_ -ne "" }) -join ';'
+    $newPath = "$InstallDir;$cleanPath"
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    Write-Success "Prioritized $InstallDir at front of User PATH."
 
     # Update current session PATH immediately
-    if ($env:Path -notlike "*$InstallDir*") {
-        $env:Path = "$env:Path;$InstallDir"
-        Write-Success "Updated current PowerShell session PATH."
-    }
+    $cleanEnvPath = ($env:Path -split ';' | Where-Object { $_ -ne $InstallDir -and $_ -ne "" }) -join ';'
+    $env:Path = "$InstallDir;$cleanEnvPath"
+    Write-Success "Prioritized $InstallDir in current PowerShell session PATH."
 
     # 5. Shell Completions Setup
     Write-Step "Setting up PowerShell tab completion..."
     try {
-        $profileDir = Split-Path $PROFILE -Parent
+        $targetProfile = if ([string]::IsNullOrWhiteSpace($PROFILE)) {
+            "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
+        } else {
+            $PROFILE
+        }
+        $profileDir = Split-Path $targetProfile -Parent
         if (-not (Test-Path $profileDir)) {
             New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
         }
-        if (-not (Test-Path $PROFILE)) {
-            New-Item -ItemType File -Force -Path $PROFILE | Out-Null
+        if (-not (Test-Path $targetProfile)) {
+            New-Item -ItemType File -Force -Path $targetProfile | Out-Null
         }
-        $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
+        $profileContent = Get-Content $targetProfile -Raw -ErrorAction SilentlyContinue
         $completionHook = @'
 
 # PRUBETH CLI Tab Completion Hook
@@ -219,10 +232,10 @@ if (Get-Command prubeth -ErrorAction SilentlyContinue) {
 }
 '@
         if ($profileContent -notlike "*PRUBETH CLI Tab Completion Hook*") {
-            Add-Content -Path $PROFILE -Value $completionHook
-            Write-Success "PowerShell tab completions registered in $PROFILE"
+            Add-Content -Path $targetProfile -Value $completionHook
+            Write-Success "PowerShell tab completions registered in $targetProfile"
         } else {
-            Write-Info "PowerShell completions already present in $PROFILE"
+            Write-Info "PowerShell completions already present in $targetProfile"
         }
     } catch {
         Write-Info "Completions configuration skipped: $($_.Exception.Message)"

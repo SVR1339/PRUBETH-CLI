@@ -399,45 +399,33 @@ def ensure_startup_permissions(console: Console, cfg_mgr: ConfigManager, workspa
         except Exception:
             pass
 
-    first_run = not cfg.get("first_run_completed", False)
+    # 1. Ensure settings.json exists without blocking the developer
+    if not settings_file.exists():
+        try:
+            save_claude_style_settings(Path.home(), mode="builder", workspace_root=workspace_root)
+        except Exception:
+            pass
 
-    # 1. First-Time Setup Wizard if first run or missing settings
-    if first_run or not settings_file.exists():
-        render_onboarding_wizard(console, cfg_mgr)
+    # Ensure first_run_completed is marked so the cockpit starts immediately
+    if not cfg.get("first_run_completed", False):
+        cfg_mgr.set("first_run_completed", True)
+        if not cfg.get("default_workspace_dir"):
+            cand = Path.home() / "projects"
+            if not cand.exists():
+                cand = Path.home() / "prubeth-workspace"
+            cand.mkdir(parents=True, exist_ok=True)
+            cfg_mgr.set("default_workspace_dir", str(cand))
         cfg = cfg_mgr.load_config()
-        if cfg.get("default_workspace_dir"):
-            target_ws = Path(cfg["default_workspace_dir"]).resolve()
-            try:
-                os.chdir(str(target_ws))
-                workspace_root = target_ws
-            except Exception:
-                pass
-        return workspace_root
 
-    # 2. Check / Prompt for Default Project Storage Location if not yet set
+    # 2. Check / Set Default Project Storage Location if not yet set
     default_ws_cfg = cfg.get("default_workspace_dir")
     if not default_ws_cfg:
-        console.print()
-        console.print(Panel(
-            "[bold white]PRUBETH Project Storage Configuration[/bold white]\n"
-            "[dim]A designated workspace keeps code, git histories, and rollback snapshots isolated and secure.[/dim]",
-            title="Storage Location Initialisation",
-            border_style="#00F5D4",
-            box=box.ROUNDED
-        ))
-        console.print("[bold cyan]Default Project Storage & Workspace Directory[/bold cyan]")
-        cand_ws = Path.home() / "prubeth-workspace"
-        console.print("Where should PRUBETH create projects, store code, and manage workspaces?")
-        console.print(f"  [dim]Recommended default:[/dim] [bold white]{cand_ws}[/bold white]")
-        if sys.stdin.isatty():
-            chosen = Prompt.ask("Enter workspace storage location", default=str(cand_ws))
-        else:
-            chosen = str(cand_ws)
-        target_ws = Path(chosen).expanduser().resolve()
-        target_ws.mkdir(parents=True, exist_ok=True)
-        cfg_mgr.set("default_workspace_dir", str(target_ws))
-        console.print(f"  [bold green]✔ Configured Storage Location:[/bold green] [bold cyan]{target_ws}[/bold cyan]\n")
-        default_ws_cfg = str(target_ws)
+        cand_ws = Path.home() / "projects"
+        if not cand_ws.exists():
+            cand_ws = Path.home() / "prubeth-workspace"
+        cand_ws.mkdir(parents=True, exist_ok=True)
+        cfg_mgr.set("default_workspace_dir", str(cand_ws))
+        default_ws_cfg = str(cand_ws)
 
     # 3. Handle launch from User Home Directory or Windows System root
     win_sys = os.environ.get("SystemRoot", "C:\\Windows").lower() if sys.platform == "win32" else ""
