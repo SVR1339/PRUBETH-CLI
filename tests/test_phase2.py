@@ -126,8 +126,20 @@ class TestPhase2Subsystems(unittest.TestCase):
         try:
             # Connect a mock IDE client
             client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client.connect(("127.0.0.1", 29999))
-            time.sleep(0.1)
+            connected = False
+            for _ in range(25):
+                try:
+                    client.connect(("127.0.0.1", 29999))
+                    connected = True
+                    break
+                except (ConnectionRefusedError, OSError):
+                    time.sleep(0.05)
+            self.assertTrue(connected, "Failed to connect to IDEBridgeServer")
+
+            for _ in range(25):
+                if bridge.client_count >= 1:
+                    break
+                time.sleep(0.05)
             self.assertEqual(bridge.client_count, 1)
 
             # Emit an event

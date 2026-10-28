@@ -63,8 +63,8 @@ class PrubethDoctor:
         })
 
         # 3. Memory Footprint Invariance (< 33 MB CPU RAM)
-        import psutil
         try:
+            import psutil
             process = psutil.Process()
             mem_mb = round(process.memory_info().rss / (1024 * 1024), 2)
             mem_ok = mem_mb < 50.0

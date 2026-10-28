@@ -27,14 +27,17 @@ class IDEBridgeServer:
         self.clients_lock = threading.Lock()
         self.command_callbacks: List[Callable[[Dict[str, Any]], None]] = []
         self._server_socket: Optional[socket.socket] = None
+        self._ready_event = threading.Event()
 
     def start(self):
         """Starts the background IPC listener thread."""
         if self.running:
             return
         self.running = True
+        self._ready_event.clear()
         self.server_thread = threading.Thread(target=self._run_server, daemon=True)
         self.server_thread.start()
+        self._ready_event.wait(timeout=5.0)
 
     def stop(self):
         """Stops the IPC server and disconnects active clients."""
@@ -64,8 +67,10 @@ class IDEBridgeServer:
             self._server_socket.bind(("127.0.0.1", self.port))
             self._server_socket.listen(5)
             self._server_socket.settimeout(1.0)
+            self._ready_event.set()
         except Exception:
             self.running = False
+            self._ready_event.set()
             return
 
         while self.running:

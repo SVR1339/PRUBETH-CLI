@@ -91,8 +91,17 @@ class SecurityEngine:
     def validate_path(self, target_path: str) -> Tuple[bool, Path, str]:
         """Enforces that all file interactions remain strictly within the workspace jail."""
         try:
+            raw_path_str = str(target_path).strip()
+
+            # Cross-platform check: Windows drive specs (e.g. C:\...) or UNC paths (\\...)
+            # On non-Windows platforms (POSIX/Linux/macOS), pathlib does not treat drive letters
+            # as absolute roots, causing them to incorrectly resolve relative to workspace.
+            if re.match(r'^[a-zA-Z]:[/\\]', raw_path_str) or raw_path_str.startswith('\\\\'):
+                if os.name != 'nt':
+                    return False, Path(raw_path_str), f"Security Violation: Path '{target_path}' escapes workspace jail ({self.workspace_root})."
+
             # Expand ~ to catch home-directory traversal attempts
-            expanded_str = os.path.expanduser(str(target_path))
+            expanded_str = os.path.expanduser(raw_path_str)
             p = Path(expanded_str)
             resolved = p.resolve() if p.is_absolute() else (self.workspace_root / p).resolve()
             try:

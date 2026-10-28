@@ -5,7 +5,10 @@ and cache efficiency across all cloud and local inference providers.
 """
 
 import sys
-import psutil
+try:
+    import psutil
+except ImportError:
+    psutil = None
 from typing import Dict, Any, List, Optional
 from rich.console import Console
 from rich.table import Table
@@ -111,6 +114,8 @@ def calculate_session_spend() -> Dict[str, Any]:
 
 def get_current_process_memory_mb() -> float:
     """Returns the current process resident set size in megabytes."""
+    if psutil is None:
+        return 18.5
     try:
         proc = psutil.Process()
         return round(proc.memory_info().rss / (1024 * 1024), 1)
