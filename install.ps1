@@ -1,5 +1,5 @@
-﻿& {
-    $Version = if ($env:PRUBETH_VERSION) { $env:PRUBETH_VERSION } else { "v1.3.1" }
+& {
+    $Version = if ($env:PRUBETH_VERSION) { $env:PRUBETH_VERSION } else { "v2.0.0" }
     $InstallDir = if ($env:PRUBETH_INSTALL_DIR) { $env:PRUBETH_INSTALL_DIR } else { "$env:USERPROFILE\.prubeth\bin" }
     $NoPrompt = if ($env:PRUBETH_NO_PROMPT) { $true } else { $false }
     $Force = if ($env:PRUBETH_FORCE) { $true } else { $false }
@@ -82,41 +82,38 @@
         Write-Success "Installed local standalone native distribution to $binaryTarget"
     }
 
-    # 3. Remote Download Strategy (Direct from GitHub Releases / Raw Repo)
+    # 3. Remote Download Strategy (Direct Standalone Executable / Release Zip / ZipApp)
     if (-not $installedSuccessfully) {
+        $directExeUrl = "https://github.com/$repoOwner/$repoName/releases/download/$Version/prubeth.exe"
+        $latestExeUrl = "https://github.com/$repoOwner/$repoName/releases/latest/download/prubeth.exe"
         $releaseZipUrl = "https://github.com/$repoOwner/$repoName/releases/download/$Version/prubeth-windows-x64.zip"
         $latestZipUrl = "https://github.com/$repoOwner/$repoName/releases/latest/download/prubeth-windows-x64.zip"
         $tempZip = Join-Path $env:TEMP "prubeth-windows-x64.zip"
         
-        Write-Step "Downloading PRUBETH Standalone Native Binary from GitHub..."
-        Write-Info "Source: $releaseZipUrl"
+        Write-Step "Downloading PRUBETH Standalone Native Binary (prubeth.exe) from GitHub..."
+        Write-Info "Source: $directExeUrl"
 
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-            Invoke-WebRequest -Uri $releaseZipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 60
-            if ((Test-Path $tempZip) -and ((Get-Item $tempZip).Length -gt 1000000)) {
-                Expand-Archive -Path $tempZip -DestinationPath $InstallDir -Force
-                Remove-Item -Path $tempZip -Force
-                if (Test-Path $binaryTarget) {
-                    $installedSuccessfully = $true
-                    Write-Success "Downloaded and extracted standalone native binary."
-                }
+            Invoke-WebRequest -Uri $directExeUrl -OutFile $binaryTarget -UseBasicParsing -TimeoutSec 90
+            if ((Test-Path $binaryTarget) -and ((Get-Item $binaryTarget).Length -gt 10000000)) {
+                $installedSuccessfully = $true
+                Write-Success "Downloaded standalone native binary directly: $binaryTarget"
             }
         } catch {
-            Write-Info "Release zip download at tag $Version deferred: $($_.Exception.Message)"
+            Write-Info "Direct executable download deferred: $($_.Exception.Message). Trying release zip..."
             try {
-                Write-Info "Attempting latest release zip endpoint: $latestZipUrl"
-                Invoke-WebRequest -Uri $latestZipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 60
+                Invoke-WebRequest -Uri $releaseZipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 90
                 if ((Test-Path $tempZip) -and ((Get-Item $tempZip).Length -gt 1000000)) {
                     Expand-Archive -Path $tempZip -DestinationPath $InstallDir -Force
                     Remove-Item -Path $tempZip -Force
                     if (Test-Path $binaryTarget) {
                         $installedSuccessfully = $true
-                        Write-Success "Downloaded and extracted standalone native binary from latest release."
+                        Write-Success "Downloaded and extracted standalone native binary."
                     }
                 }
             } catch {
-                Write-Info "Direct release download deferred. Transitioning to universal ZipApp fallback..."
+                Write-Info "Release zip download deferred. Transitioning to universal ZipApp fallback..."
             }
         }
     }
