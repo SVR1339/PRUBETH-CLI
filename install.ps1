@@ -62,6 +62,13 @@
         Write-Info "Installation directory exists: $InstallDir"
     }
 
+    # Auto-prune older legacy versions and stale binaries
+    Write-Step "Auto-pruning legacy installations and older binaries..."
+    Get-ChildItem -Path $InstallDir -Filter "prubeth*.*" -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -ne "prubeth.exe" -and $_.Name -ne "prubeth.pyz"
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $env:TEMP -Filter "prubeth*.*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
     $repoOwner = "SVR1339"
     $repoName = "PRUBETH-CLI"
     $binaryTarget = Join-Path $InstallDir "prubeth.exe"
@@ -237,7 +244,7 @@ if (Get-Command prubeth -ErrorAction SilentlyContinue) {
 
     Write-Host ""
     Write-Host "${Gold}${Bold}==============================================================================${Reset}"
-    Write-Host "${Gold}${Bold}  PRUBETH CLI v1.3.1 Installation Completed Successfully!${Reset}"
+    Write-Host "${Gold}${Bold}  PRUBETH CLI ${Version} Installation Completed Successfully!${Reset}"
     Write-Host "${Gold}${Bold}==============================================================================${Reset}"
     Write-Host "  Command:      ${Turquoise}prubeth${Reset} (Available globally in terminal)"
     Write-Host "  Location:     ${Dim}${InstallDir}${Reset}"
