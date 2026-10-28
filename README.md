@@ -1,18 +1,14 @@
 # PRUBETH: Autonomous Developer Command-Line Interface (CLI)
 
-```
-  ██████╗ ██████╗ ██╗   ██╗██████╗ ███████╗████████╗██╗  ██╗
-  ██╔══██╗██╔══██╗██║   ██║██╔══██╗██╔════╝╚══██╔══╝██║  ██║
-  ██████╔╝██████╔╝██║   ██║██████╔╝█████╗     ██║   ███████║
-  ██╔═══╝ ██╔══██╗██║   ██║██╔══██╗██╔══╝     ██║   ██╔══██║
-  ██║     ██║  ██║╚██████╔╝██████╔╝███████╗   ██║   ██║  ██║
-  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝
-```
+<p align="center">
+  <img src="assets/logo.png" alt="PRUBETH AI Logo" width="720"/>
+</p>
 
-[![Tests](https://img.shields.io/badge/Tests-95%2F95%20Passing-brightgreen.svg)]()
+[![Version](https://img.shields.io/badge/Version-v2.0.0%20Pinnacle-gold.svg)](https://github.com/SVR1339/PRUBETH-CLI/releases/tag/v2.0.0)
+[![Tests](https://img.shields.io/badge/Tests-7%2C274%2F7%2C274%20Passing%20(100%25)-brightgreen.svg)]()
 [![Methodologies](https://img.shields.io/badge/Methodologies-14%20Verified-blue.svg)]()
 [![Doctor](https://img.shields.io/badge/Qualification-Doctor%20ACCEPTED-brightgreen.svg)]()
-[![Therapy](https://img.shields.io/badge/System%20Therapy-7%20Pillars%20Optimized-brightgreen.svg)]()
+[![Therapy](https://img.shields.io/badge/System%20Therapy-7%20Pillars%20Optimised-brightgreen.svg)]()
 [![Security](https://img.shields.io/badge/Security-Zero%20Telemetry%20%7C%20Path%20Jail-blue.svg)](SECURITY.md)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Commercial](https://img.shields.io/badge/Commercial%20Use-Permitted%20(Enterprise)-brightgreen.svg)]()
@@ -93,30 +89,49 @@ PRUBETH is released under the **Apache 2.0 Open-Source License**:
 
 ---
 
-## 🚀 One-Line Installation (Directly from GitHub)
+## 🚀 All-in-One Installation (Every OS & Architecture)
 
-Install PRUBETH CLI globally on any machine in a single command directly from GitHub — matching and surpassing Claude Code and Gemini CLI:
+Install PRUBETH CLI globally on any machine with a single command:
 
-### 🪟 Windows (PowerShell — Recommended)
-Run in PowerShell (installs standalone native binary, sets up PATH, and configures tab completion):
+### 🪟 Windows — One-Line PowerShell Installer (Recommended)
+Installs the standalone native binary, adds to PATH, and enables shell completion:
 ```powershell
 irm https://raw.githubusercontent.com/SVR1339/PRUBETH-CLI/main/install.ps1 | iex
 ```
 
-### 🍎 macOS & 🐧 Linux (Bash / Zsh)
-Run in your terminal:
+### ⚡ Windows — Direct Uncompressed Executable (Zero Extraction)
+Download and execute `prubeth.exe` immediately with zero unzipping or package managers:
+```powershell
+Invoke-WebRequest -Uri "https://github.com/SVR1339/PRUBETH-CLI/releases/download/v2.0.0/prubeth.exe" -OutFile "prubeth.exe"; .\prubeth.exe doctor
+```
+
+### 🍎 macOS & 🐧 Linux — One-Line Shell Installer (Bash / Zsh)
+Installs globally to `~/.prubeth/bin`, configures your shell profile (`.bashrc` / `.zshrc`), and sets up completions:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SVR1339/PRUBETH-CLI/main/install.sh | bash
 ```
 
-### ⚡ Astral uv (Ultra-Fast < 2s)
+### 📦 Universal Python Wheel (Any OS — Windows, Linux, macOS)
+Install the official v2.0.0 PEP 427 wheel directly:
+```bash
+pip install https://github.com/SVR1339/PRUBETH-CLI/releases/download/v2.0.0/prubeth-2.0.0-py3-none-any.whl
+```
+
+### ⚡ Astral uv (Ultra-Fast < 2s — Any OS)
 ```bash
 uv tool install git+https://github.com/SVR1339/PRUBETH-CLI.git
 ```
 
-### 📦 pipx (Universal Python Isolated Environment)
+### 📦 pipx (Universal Isolated Environment — Any OS)
 ```bash
 pipx install git+https://github.com/SVR1339/PRUBETH-CLI.git
+```
+
+### 🌐 Standalone Universal ZipApp (Any OS with Python 3.10+)
+Zero dependencies required — single runnable archive:
+```bash
+curl -LO https://github.com/SVR1339/PRUBETH-CLI/releases/download/v2.0.0/prubeth.pyz
+python prubeth.pyz doctor
 ```
 
 ---
