@@ -191,7 +191,10 @@ def render_onboarding_wizard(console: Console, cfg_mgr: Optional[ConfigManager] 
     console.print(f"  [dim]Default recommended location:[/dim] [bold white]{default_ws}[/bold white]")
     
     if interactive and sys.stdin.isatty():
-        chosen_ws = Prompt.ask("Enter workspace storage location", default=str(default_ws))
+        chosen_ws = Prompt.ask("Enter workspace storage location [dim](or 'skip'/'q')[/dim]", default=str(default_ws))
+        if chosen_ws.strip().lower() in ["q", "quit", "exit", "cancel", "skip"]:
+            console.print("[dim yellow]Using default workspace storage location.[/dim yellow]")
+            chosen_ws = str(default_ws)
     else:
         chosen_ws = str(default_ws)
         
@@ -572,101 +575,147 @@ def ensure_startup_permissions(console: Console, cfg_mgr: ConfigManager, workspa
 def run_personal_setup_hub(console: Console, cfg_mgr: Optional[ConfigManager] = None, interactive: bool = True):
     """Subsystem: Dedicated Personal Usage & Local Models Configuration Hub."""
     cfg_mgr = cfg_mgr or ConfigManager()
-    cfg = cfg_mgr.load_config()
-    keys = cfg.get("api_keys", {})
-    local_info = probe_local_ai_capabilities()
 
-    def mask_key(k: Optional[str]) -> str:
-        if not k:
-            return "[dim red]Not configured[/dim red]"
-        if len(k) <= 8:
-            return "[green]Configured[/green]"
-        return f"[green]Configured[/green] [dim]({k[:4]}...{k[-4:]})[/dim]"
+    while True:
+        try:
+            cfg = cfg_mgr.load_config()
+            keys = cfg.get("api_keys", {})
+            local_info = probe_local_ai_capabilities()
 
-    console.print()
-    table = Table(
-        title="PRUBETH Personal AI Engine & Local Models Hub",
-        box=box.ROUNDED,
-        border_style="#00F5D4",
-        header_style="bold #FF9F1C"
-    )
-    table.add_column("Category", style="cyan", width=24)
-    table.add_column("Item / Provider", style="white", width=28)
-    table.add_column("Current Personal Status / Setting", style="green")
+            def mask_key(k: Optional[str]) -> str:
+                if not k:
+                    return "[dim red]Not configured[/dim red]"
+                if len(k) <= 8:
+                    return "[green]Configured[/green]"
+                return f"[green]Configured[/green] [dim]({k[:4]}...{k[-4:]})[/dim]"
 
-    table.add_row("1. Personal Cloud Key", "Google Gemini API Key", mask_key(keys.get("google")))
-    table.add_row("2. Personal Cloud Key", "Anthropic Claude API Key", mask_key(keys.get("anthropic")))
-    table.add_row("3. Personal Cloud Key", "OpenAI API Key", mask_key(keys.get("openai")))
-    table.add_row("4. Personal Cloud Key", "OpenRouter / DeepSeek Key", mask_key(keys.get("openrouter")))
+            console.print()
+            table = Table(
+                title="PRUBETH Personal AI Engine & Local Models Hub",
+                box=box.ROUNDED,
+                border_style="#00F5D4",
+                header_style="bold #FF9F1C"
+            )
+            table.add_column("Category", style="cyan", width=24)
+            table.add_column("Item / Provider", style="white", width=28)
+            table.add_column("Current Personal Status / Setting", style="green")
 
-    # Detected local models
-    models = local_info.get("ollama_models", [])
-    if models:
-        models_str = ", ".join(models)
-        status_str = f"[bold green]{len(models)} model(s) installed[/bold green] [dim]({models_str})[/dim]"
-    else:
-        status_str = "[dim yellow]No offline models detected (install via 'ollama pull <model>')[/dim yellow]"
-    table.add_row("5. Downloaded Local Models", "Ollama / LM Studio", status_str)
+            table.add_row("1. Personal Cloud Key", "Google Gemini API Key", mask_key(keys.get("google")))
+            table.add_row("2. Personal Cloud Key", "Anthropic Claude API Key", mask_key(keys.get("anthropic")))
+            table.add_row("3. Personal Cloud Key", "OpenAI API Key", mask_key(keys.get("openai")))
+            table.add_row("4. Personal Cloud Key", "OpenRouter / DeepSeek Key", mask_key(keys.get("openrouter")))
 
-    active_model = cfg.get("default_model", "gemini-2.5-pro")
-    active_prov = cfg.get("default_provider", "google")
-    table.add_row("6. Active Personal Model", f"{active_prov.upper()}", f"[bold cyan]{active_model}[/bold cyan]")
-
-    console.print(table)
-
-    if interactive and sys.stdin.isatty():
-        console.print("\n[bold cyan]Personal Actions:[/bold cyan]")
-        console.print("  [bold]1.[/bold] Set/Update Google Gemini Key")
-        console.print("  [bold]2.[/bold] Set/Update Anthropic Claude Key")
-        console.print("  [bold]3.[/bold] Set/Update OpenAI Key")
-        console.print("  [bold]4.[/bold] Set/Update OpenRouter Key")
-        console.print("  [bold]5.[/bold] Select Downloaded Local Model (Ollama)")
-        console.print("  [bold]6.[/bold] Done / Return to Cockpit")
-
-        ans = Prompt.ask("Choose action [1-6]", choices=["1", "2", "3", "4", "5", "6"], default="6")
-        if ans == "1":
-            new_k = Prompt.ask("Enter personal Google Gemini API Key")
-            if new_k:
-                cfg_mgr.set("api_keys.google", new_k)
-                cfg_mgr.set("default_provider", "google")
-                cfg_mgr.set("default_model", "gemini-2.5-pro")
-                console.print("[green]✔ Personal Google Gemini key updated successfully.[/green]")
-        elif ans == "2":
-            new_k = Prompt.ask("Enter personal Anthropic Claude API Key")
-            if new_k:
-                cfg_mgr.set("api_keys.anthropic", new_k)
-                cfg_mgr.set("default_provider", "anthropic")
-                cfg_mgr.set("default_model", "claude-3-7-sonnet-20250219")
-                console.print("[green]✔ Personal Anthropic Claude key updated successfully.[/green]")
-        elif ans == "3":
-            new_k = Prompt.ask("Enter personal OpenAI API Key")
-            if new_k:
-                cfg_mgr.set("api_keys.openai", new_k)
-                cfg_mgr.set("default_provider", "openai")
-                cfg_mgr.set("default_model", "o3-mini")
-                console.print("[green]✔ Personal OpenAI key updated successfully.[/green]")
-        elif ans == "4":
-            new_k = Prompt.ask("Enter personal OpenRouter Key")
-            if new_k:
-                cfg_mgr.set("api_keys.openrouter", new_k)
-                cfg_mgr.set("default_provider", "openrouter")
-                cfg_mgr.set("default_model", "o3-mini")
-                console.print("[green]✔ Personal OpenRouter key updated successfully.[/green]")
-        elif ans == "5":
+            # Detected local models
+            models = local_info.get("ollama_models", [])
             if models:
-                console.print("\n[bold cyan]Select from your downloaded local models:[/bold cyan]")
-                for idx, m in enumerate(models, start=1):
-                    console.print(f"  {idx}. [bold white]{m}[/bold white]")
-                m_choice = Prompt.ask("Pick model number", choices=[str(i) for i in range(1, len(models) + 1)], default="1")
-                picked = models[int(m_choice) - 1]
-                cfg_mgr.set("default_provider", "ollama")
-                cfg_mgr.set("default_model", picked)
-                cfg_mgr.set("offline_mode", True)
-                console.print(f"[green]✔ Switched active personal model to offline local: [bold cyan]{picked}[/bold cyan][/green]")
+                models_str = ", ".join(models)
+                status_str = f"[bold green]{len(models)} model(s) installed[/bold green] [dim]({models_str})[/dim]"
             else:
-                custom_tag = Prompt.ask("Enter local model tag", default="qwen2.5:1.5b")
-                cfg_mgr.set("default_provider", "ollama")
-                cfg_mgr.set("default_model", custom_tag)
-                cfg_mgr.set("offline_mode", True)
-                console.print(f"[green]✔ Configured offline local model tag: [bold cyan]{custom_tag}[/bold cyan][/green]")
-        console.print()
+                status_str = "[dim yellow]No offline models detected (install via 'ollama pull <model>')[/dim yellow]"
+            table.add_row("5. Downloaded Local Models", "Ollama / LM Studio", status_str)
+
+            active_model = cfg.get("default_model", "gemini-2.5-pro")
+            active_prov = cfg.get("default_provider", "google")
+            table.add_row("6. Active Personal Model", f"{active_prov.upper()}", f"[bold cyan]{active_model}[/bold cyan]")
+
+            console.print(table)
+
+            if not (interactive and sys.stdin.isatty()):
+                break
+
+            console.print("\n[bold cyan]Personal Actions:[/bold cyan]")
+            console.print("  [bold]1.[/bold] Set/Update Google Gemini Key")
+            console.print("  [bold]2.[/bold] Set/Update Anthropic Claude Key")
+            console.print("  [bold]3.[/bold] Set/Update OpenAI Key")
+            console.print("  [bold]4.[/bold] Set/Update OpenRouter Key")
+            console.print("  [bold]5.[/bold] Select Downloaded Local Model (Ollama)")
+            console.print("  [bold]6.[/bold] Clear All Keys (Reset to Factory Default)")
+            console.print("  [bold]7.[/bold] Done / Return to Cockpit (or press Enter)")
+
+            ans = Prompt.ask("Choose action [1-7, or 'b' to return]", choices=["1", "2", "3", "4", "5", "6", "7", "b", "back", "q", "exit"], default="7")
+            if ans in ["7", "b", "back", "q", "exit"]:
+                console.print("[dim green]Returning to main cockpit...[/dim green]")
+                break
+
+            if ans == "1":
+                new_k = Prompt.ask("Enter personal Google Gemini API Key [dim](or 'b' to cancel, 'clear' to unset)[/dim]", default="")
+                if new_k.strip().lower() in ["", "b", "back", "cancel", "q"]:
+                    console.print("[dim yellow]Cancelled. Returning to menu...[/dim yellow]")
+                    continue
+                if new_k.strip().lower() in ["clear", "delete", "unset", "none"]:
+                    cfg_mgr.set("api_keys.google", "")
+                    console.print("[green]✔ Personal Google Gemini key cleared (Not configured).[/green]")
+                else:
+                    cfg_mgr.set("api_keys.google", new_k.strip())
+                    cfg_mgr.set("default_provider", "google")
+                    cfg_mgr.set("default_model", "gemini-2.5-pro")
+                    console.print("[green]✔ Personal Google Gemini key updated successfully.[/green]")
+            elif ans == "2":
+                new_k = Prompt.ask("Enter personal Anthropic Claude API Key [dim](or 'b' to cancel, 'clear' to unset)[/dim]", default="")
+                if new_k.strip().lower() in ["", "b", "back", "cancel", "q"]:
+                    console.print("[dim yellow]Cancelled. Returning to menu...[/dim yellow]")
+                    continue
+                if new_k.strip().lower() in ["clear", "delete", "unset", "none"]:
+                    cfg_mgr.set("api_keys.anthropic", "")
+                    console.print("[green]✔ Personal Anthropic Claude key cleared (Not configured).[/green]")
+                else:
+                    cfg_mgr.set("api_keys.anthropic", new_k.strip())
+                    cfg_mgr.set("default_provider", "anthropic")
+                    cfg_mgr.set("default_model", "claude-3-7-sonnet-20250219")
+                    console.print("[green]✔ Personal Anthropic Claude key updated successfully.[/green]")
+            elif ans == "3":
+                new_k = Prompt.ask("Enter personal OpenAI API Key [dim](or 'b' to cancel, 'clear' to unset)[/dim]", default="")
+                if new_k.strip().lower() in ["", "b", "back", "cancel", "q"]:
+                    console.print("[dim yellow]Cancelled. Returning to menu...[/dim yellow]")
+                    continue
+                if new_k.strip().lower() in ["clear", "delete", "unset", "none"]:
+                    cfg_mgr.set("api_keys.openai", "")
+                    console.print("[green]✔ Personal OpenAI key cleared (Not configured).[/green]")
+                else:
+                    cfg_mgr.set("api_keys.openai", new_k.strip())
+                    cfg_mgr.set("default_provider", "openai")
+                    cfg_mgr.set("default_model", "o3-mini")
+                    console.print("[green]✔ Personal OpenAI key updated successfully.[/green]")
+            elif ans == "4":
+                new_k = Prompt.ask("Enter personal OpenRouter Key [dim](or 'b' to cancel, 'clear' to unset)[/dim]", default="")
+                if new_k.strip().lower() in ["", "b", "back", "cancel", "q"]:
+                    console.print("[dim yellow]Cancelled. Returning to menu...[/dim yellow]")
+                    continue
+                if new_k.strip().lower() in ["clear", "delete", "unset", "none"]:
+                    cfg_mgr.set("api_keys.openrouter", "")
+                    console.print("[green]✔ Personal OpenRouter key cleared (Not configured).[/green]")
+                else:
+                    cfg_mgr.set("api_keys.openrouter", new_k.strip())
+                    cfg_mgr.set("default_provider", "openrouter")
+                    cfg_mgr.set("default_model", "o3-mini")
+                    console.print("[green]✔ Personal OpenRouter key updated successfully.[/green]")
+            elif ans == "5":
+                if models:
+                    console.print("\n[bold cyan]Select from your downloaded local models (or 'b' to cancel):[/bold cyan]")
+                    for idx, m in enumerate(models, start=1):
+                        console.print(f"  {idx}. [bold white]{m}[/bold white]")
+                    choices = [str(i) for i in range(1, len(models) + 1)] + ["b", "back", "q"]
+                    m_choice = Prompt.ask("Pick model number", choices=choices, default="1")
+                    if m_choice in ["b", "back", "q"]:
+                        console.print("[dim yellow]Cancelled. Returning to menu...[/dim yellow]")
+                        continue
+                    picked = models[int(m_choice) - 1]
+                    cfg_mgr.set("default_provider", "ollama")
+                    cfg_mgr.set("default_model", picked)
+                    cfg_mgr.set("offline_mode", True)
+                    console.print(f"[green]✔ Switched active personal model to offline local: [bold cyan]{picked}[/bold cyan][/green]")
+                else:
+                    custom_tag = Prompt.ask("Enter local model tag (or 'b' to cancel)", default="qwen2.5:1.5b")
+                    if custom_tag.strip().lower() in ["b", "back", "cancel", "q"]:
+                        continue
+                    cfg_mgr.set("default_provider", "ollama")
+                    cfg_mgr.set("default_model", custom_tag.strip())
+                    cfg_mgr.set("offline_mode", True)
+                    console.print(f"[green]✔ Configured offline local model tag: [bold cyan]{custom_tag}[/bold cyan][/green]")
+            elif ans == "6":
+                for p in ["google", "openai", "anthropic", "deepseek", "groq", "openrouter"]:
+                    cfg_mgr.set(f"api_keys.{p}", "")
+                console.print("[bold green]✔ All API keys cleared to clean factory default state![/bold green]")
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[dim yellow]Exited Personal Hub. Returning to Cockpit...[/dim yellow]")
+            break
